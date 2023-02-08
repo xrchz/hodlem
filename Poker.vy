@@ -62,7 +62,6 @@ struct Hand:
   actionIndex: uint8              # seat index of currently active player
   actionBlock: uint256            # block from which action was on the active player
   pot:         uint256            # pot for the hand (from previous rounds)
-  shuffle:     Shuffle            # shuffle data for this hand
 
 struct Config:
   tableId:     uint256             # table id (can be reused after table is finished)
@@ -83,6 +82,7 @@ struct Table:
   seats:       uint256[MAX_SEATS]   # playerIds in seats as at the start of the game
   stacks:      uint256[MAX_SEATS]   # stack at each seat (zero for eliminated players)
   hand:        Hand                 # current Hand
+  shuffle:     Shuffle              # current Shuffle
 
 tables: HashMap[uint256, Table]
 
@@ -145,8 +145,8 @@ def commit(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _hashed_com
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
-  assert self.tables[_tableId].hand.shuffle.commitments[_seatIndex] == empty(bytes32), "already committed"
-  self.tables[_tableId].hand.shuffle.commitments[_seatIndex] = _hashed_commitment
+  assert self.tables[_tableId].shuffle.commitments[_seatIndex] == empty(bytes32), "already committed"
+  self.tables[_tableId].shuffle.commitments[_seatIndex] = _hashed_commitment
 
 @external
 def revealCard(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _cardIndex: uint8, _reveal: uint8):
@@ -155,11 +155,11 @@ def revealCard(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _cardIn
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   assert _reveal != empty(uint8), "invalid reveal"
-  assert self.tables[_tableId].hand.shuffle.openCommits[_seatIndex] == empty(bytes32), "previous commitment open"
-  assert self.tables[_tableId].hand.shuffle.commitments[_seatIndex] != empty(bytes32), "not committed"
+  assert self.tables[_tableId].shuffle.openCommits[_seatIndex] == empty(bytes32), "previous commitment open"
+  assert self.tables[_tableId].shuffle.commitments[_seatIndex] != empty(bytes32), "not committed"
   assert _cardIndex < 26, "invalid cardIndex"
-  assert self.tables[_tableId].hand.shuffle.revelations[_seatIndex][_cardIndex] == empty(uint8), "already revealed"
-  self.tables[_tableId].hand.shuffle.revelations[_seatIndex][_cardIndex] = _reveal
+  assert self.tables[_tableId].shuffle.revelations[_seatIndex][_cardIndex] == empty(uint8), "already revealed"
+  self.tables[_tableId].shuffle.revelations[_seatIndex][_cardIndex] = _reveal
 
 @internal
 @view
@@ -169,8 +169,8 @@ def revealedCard(_tableId: uint256, _cardIndex: uint8) -> uint8:
   seatIndex: uint8 = 0
   for playerId in self.tables[_tableId].seats:
     if playerId != empty(uint256): # TODO: also need a non-empty stack?
-      assert self.tables[_tableId].hand.shuffle.revelations[seatIndex][cardIndex] != empty(uint8), "not revealed"
-      cardIndex = self.tables[_tableId].hand.shuffle.revelations[seatIndex][cardIndex] - 1
+      assert self.tables[_tableId].shuffle.revelations[seatIndex][cardIndex] != empty(uint8), "not revealed"
+      cardIndex = self.tables[_tableId].shuffle.revelations[seatIndex][cardIndex] - 1
     seatIndex += 1
   return cardIndex + 1
 
@@ -190,8 +190,8 @@ def selectDealer(_tableId: uint256):
            rankHighestCard == rankCard and self.suit(highestCard) < self.suit(card)):
         highestCard = card
         highestCardSeatIndex = seatIndex
-      self.tables[_tableId].hand.shuffle.openCommits[seatIndex] = self.tables[_tableId].hand.shuffle.commitments[seatIndex]
-      self.tables[_tableId].hand.shuffle.commitments[seatIndex] = empty(bytes32)
+      self.tables[_tableId].shuffle.openCommits[seatIndex] = self.tables[_tableId].shuffle.commitments[seatIndex]
+      self.tables[_tableId].shuffle.commitments[seatIndex] = empty(bytes32)
     seatIndex += 1
   self.tables[_tableId].hand.dealer = highestCardSeatIndex
   self.tables[_tableId].startBlock = block.number
@@ -199,23 +199,23 @@ def selectDealer(_tableId: uint256):
 @internal
 @view
 def verify(_tableId: uint256) -> bool:
-  challIndex: uint8 = self.tables[_tableId].hand.shuffle.challIndex
-  if (sha256(self.tables[_tableId].hand.shuffle.proofs[challIndex].proof) !=
-      self.tables[_tableId].hand.shuffle.openCommits[challIndex]):
+  challIndex: uint8 = self.tables[_tableId].shuffle.challIndex
+  if (sha256(self.tables[_tableId].shuffle.proofs[challIndex].proof) !=
+      self.tables[_tableId].shuffle.openCommits[challIndex]):
     return False
   used: uint256 = 2**52 - 1
   for i in range(52):
-    card: uint8 = convert(slice(self.tables[_tableId].hand.shuffle.proofs[challIndex].proof, i, 1), uint8)
+    card: uint8 = convert(slice(self.tables[_tableId].shuffle.proofs[challIndex].proof, i, 1), uint8)
     if (i < 26 and
-        self.tables[_tableId].hand.shuffle.revelations[challIndex][i] != empty(uint8) and
-        self.tables[_tableId].hand.shuffle.revelations[challIndex][i] != card):
+        self.tables[_tableId].shuffle.revelations[challIndex][i] != empty(uint8) and
+        self.tables[_tableId].shuffle.revelations[challIndex][i] != card):
       return False
     used &= ~shift(1, convert(card - 1, int128))
   return used == 0
 
 @internal
 def failChallenge(_tableId: uint256):
-  challIndex: uint8 = self.tables[_tableId].hand.shuffle.challIndex
+  challIndex: uint8 = self.tables[_tableId].shuffle.challIndex
   perPlayer: uint256 = self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn
   # burn the offender's bond + buyIn
   send(empty(address), perPlayer)
@@ -229,10 +229,10 @@ def failChallenge(_tableId: uint256):
 
 @internal
 def verifyChallenge(_tableId: uint256):
-  challIndex: uint8 = self.tables[_tableId].hand.shuffle.challIndex
+  challIndex: uint8 = self.tables[_tableId].shuffle.challIndex
   if self.verify(_tableId):
-    self.tables[_tableId].hand.shuffle.openCommits[challIndex] = empty(bytes32)
-    self.tables[_tableId].hand.shuffle.challBlock = empty(uint256)
+    self.tables[_tableId].shuffle.openCommits[challIndex] = empty(bytes32)
+    self.tables[_tableId].shuffle.challBlock = empty(uint256)
   else:
     self.failChallenge(_tableId)
 
@@ -242,27 +242,27 @@ def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Byte
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
-  assert self.tables[_tableId].hand.shuffle.proofs[_seatIndex].proof == empty(Bytes[52]), "already provided"
-  self.tables[_tableId].hand.shuffle.proofs[_seatIndex] = Proof({proof: _proof})
-  if self.tables[_tableId].hand.shuffle.challIndex == _seatIndex:
+  assert self.tables[_tableId].shuffle.proofs[_seatIndex].proof == empty(Bytes[52]), "already provided"
+  self.tables[_tableId].shuffle.proofs[_seatIndex] = Proof({proof: _proof})
+  if self.tables[_tableId].shuffle.challIndex == _seatIndex:
     self.verifyChallenge(_tableId)
 
 @external
 def challenge(_tableId: uint256, _seatIndex: uint8):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
-  assert self.tables[_tableId].hand.shuffle.openCommits[_seatIndex] != empty(bytes32), "no open commitment"
-  assert self.tables[_tableId].hand.shuffle.challBlock == empty(uint256), "challenge already ongoing"
-  self.tables[_tableId].hand.shuffle.challBlock = block.number
-  self.tables[_tableId].hand.shuffle.challIndex = _seatIndex
-  if self.tables[_tableId].hand.shuffle.proofs[_seatIndex].proof != empty(Bytes[52]):
+  assert self.tables[_tableId].shuffle.openCommits[_seatIndex] != empty(bytes32), "no open commitment"
+  assert self.tables[_tableId].shuffle.challBlock == empty(uint256), "challenge already ongoing"
+  self.tables[_tableId].shuffle.challBlock = block.number
+  self.tables[_tableId].shuffle.challIndex = _seatIndex
+  if self.tables[_tableId].shuffle.proofs[_seatIndex].proof != empty(Bytes[52]):
     self.verifyChallenge(_tableId)
 
 @external
 def challengeTimeout(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].hand.shuffle.challBlock != empty(uint256), "no ongoing challenge"
-  assert block.number > (self.tables[_tableId].hand.shuffle.challBlock +
+  assert self.tables[_tableId].shuffle.challBlock != empty(uint256), "no ongoing challenge"
+  assert block.number > (self.tables[_tableId].shuffle.challBlock +
                          self.tables[_tableId].config.proveBlocks), "deadline not passed"
   self.failChallenge(_tableId)
 
