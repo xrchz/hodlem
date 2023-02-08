@@ -159,15 +159,15 @@ def revealCard(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _cardIn
   self.tables[_tableId].hand.shuffle.revelations[_seatIndex][_cardIndex] = _reveal
 
 @internal
-@pure
-def revealedCard(_revelations: uint8[26][MAX_SEATS], _seats: uint256[MAX_SEATS], _cardIndex: uint8) -> uint8:
+@view
+def revealedCard(_tableId: uint256, _cardIndex: uint8) -> uint8:
   assert _cardIndex < 26, "invalid cardIndex"
   cardIndex: uint8 = _cardIndex
   seatIndex: uint8 = 0
-  for playerId in _seats:
+  for playerId in self.tables[_tableId].seats:
     if playerId != empty(uint256): # TODO: also need a non-empty stack?
-      assert _revelations[seatIndex][cardIndex] != empty(uint8), "not revealed"
-      cardIndex = _revelations[seatIndex][cardIndex] - 1
+      assert self.tables[_tableId].hand.shuffle.revelations[seatIndex][cardIndex] != empty(uint8), "not revealed"
+      cardIndex = self.tables[_tableId].hand.shuffle.revelations[seatIndex][cardIndex] - 1
     seatIndex += 1
   return cardIndex + 1
 
@@ -180,7 +180,7 @@ def selectDealer(_tableId: uint256):
   seatIndex: uint8 = 0
   for playerId in self.tables[_tableId].seats:
     if playerId != empty(uint256):
-      card: uint8 = self.revealedCard(self.tables[_tableId].hand.shuffle.revelations, self.tables[_tableId].seats, seatIndex)
+      card: uint8 = self.revealedCard(_tableId, seatIndex)
       rankCard: uint8 = self.rank(card)
       rankHighestCard: uint8 = self.rank(highestCard)
       if highestCard == empty(uint8) or rankHighestCard < rankCard or (
