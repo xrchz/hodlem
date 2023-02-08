@@ -2,7 +2,7 @@
 # no-limit hold'em sit-n-go tournament contract
 
 MAX_SEATS:  constant(uint8) =   9 # maximum seats per table
-MAX_ROUNDS: constant(uint8) = 100 # maximum number of levels in tournament structure
+MAX_LEVELS: constant(uint8) = 100 # maximum number of levels in tournament structure
 
 playerAddress: public(HashMap[uint256, address])
 pendingPlayerAddress: public(HashMap[uint256, address])
@@ -69,7 +69,7 @@ struct Config:
   bond:        uint256             # liveness bond for each player
   minPlayers:  uint8               # game can start when this many players are seated
   maxPlayers:  uint8               # game ends when this many players are left
-  structure:   uint256[MAX_ROUNDS] # small blind levels (right-padded with blanks)
+  structure:   uint256[MAX_LEVELS] # small blind levels (right-padded with blanks)
   levelBlocks: uint256             # blocks between levels
   proveBlocks: uint256             # blocks allowed for responding to a challenge
   actBlocks:   uint256             # blocks to act before folding can be triggered
@@ -100,6 +100,25 @@ def nextPlayer(_tableId: uint256, _seatIndex: uint8) -> uint8:
     else:
       break
   return nextIndex
+
+@internal
+@view
+def smallBlind(_tableId: uint256) -> uint256:
+  level: uint8 = empty(uint8)
+  if (self.tables[_tableId].startBlock +
+      convert(MAX_LEVELS, uint256) * self.tables[_tableId].config.levelBlocks <
+      block.number):
+    level = convert((block.number - self.tables[_tableId].startBlock) /
+                    self.tables[_tableId].config.levelBlocks,
+                    uint8)
+  else:
+    level = MAX_LEVELS - 1
+  for _ in range(MAX_LEVELS):
+    if self.tables[_tableId].config.structure[level] == empty(uint256):
+      level -= 1
+    else:
+      break
+  return self.tables[_tableId].config.structure[level]
 
 @external
 def commit(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _hashed_commitment: bytes32):
@@ -175,6 +194,10 @@ def verifyChallenge(_tableId: uint256):
     self.tables[_tableId].shuffle.challBlock = empty(uint256)
   else:
     self.failChallenge(_tableId)
+
+@internal
+def placeBet(_tableId: uint256, _seatIndex: uint8, _size: uint256):
+  pass
 
 @external
 def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Bytes[52]):
@@ -283,3 +306,6 @@ def selectDealer(_tableId: uint256):
   self.tables[_tableId].hand.dealer = highestCardSeatIndex
   self.tables[_tableId].startBlock = block.number
   seatIndex = self.nextPlayer(_tableId, highestCardSeatIndex)
+  smallBlind: uint256 = self.smallBlind(_tableId)
+  self.placeBet(_tableId, seatIndex, smallBlind)
+  self.placeBet(_tableId, self.nextPlayer(_tableId, seatIndex), smallBlind + smallBlind)
