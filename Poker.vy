@@ -44,13 +44,16 @@ def suit(card: uint8) -> uint8:
 # we hash permutations by first converting to Bytes[52] then sha256
 # we assume the hash of a permutation is never empty(bytes32)
 
+struct Proof:
+  proof: Bytes[52]
+
 struct Shuffle:
   commitments: bytes32[MAX_SEATS]    # hashed permutations from each player
   revelations: uint8[26][MAX_SEATS]  # revealed cards from the shuffle
   openCommits: bytes32[MAX_SEATS]    # unverified commitments now open to being challenged
   challIndex:  uint8                 # index of a player being actively challenged
   challBlock:  uint256               # block when challenge was issued (or empty if no challenge)
-  proofs:      Bytes[52 * MAX_SEATS] # proofs of commitments
+  proofs:      Proof[MAX_SEATS]      # proofs of commitments
 
 struct Hand:
   dealer:      uint8              # seat index of current dealer
@@ -193,19 +196,19 @@ def selectDealer(_tableId: uint256):
   self.tables[_tableId].hand.dealer = highestCardSeatIndex
   self.tables[_tableId].startBlock = block.number
 
-@external
-def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Bytes[52]):
-  pass
-
 @internal
-@pure
-def verify(_commitment: bytes32, _revelations: uint8[26], _proof: Bytes[52]) -> bool:
-  if sha256(_proof) != _commitment:
+@view
+def verify(_tableId: uint256) -> bool:
+  challIndex: uint8 = self.tables[_tableId].hand.shuffle.challIndex
+  if (sha256(self.tables[_tableId].hand.shuffle.proofs[challIndex].proof) !=
+      self.tables[_tableId].hand.shuffle.openCommits[challIndex]):
     return False
   used: uint256 = 2**52 - 1
   for i in range(52):
-    card: uint8 = convert(slice(_proof, i, 1), uint8)
-    if i < 26 and _revelations[i] != empty(uint8) and _revelations[i] != card:
+    card: uint8 = convert(slice(self.tables[_tableId].hand.shuffle.proofs[challIndex].proof, i, 1), uint8)
+    if (i < 26 and
+        self.tables[_tableId].hand.shuffle.revelations[challIndex][i] != empty(uint8) and
+        self.tables[_tableId].hand.shuffle.revelations[challIndex][i] != card):
       return False
     used &= ~shift(1, convert(card - 1, int128))
   return used == 0
@@ -225,14 +228,24 @@ def failChallenge(_tableId: uint256):
   self.tables[_tableId] = empty(Table)
 
 @internal
-def verifyChallenge(_tableId: uint256, _proof: Bytes[52]):
+def verifyChallenge(_tableId: uint256):
   challIndex: uint8 = self.tables[_tableId].hand.shuffle.challIndex
-  verified: bool = self.verify(self.tables[_tableId].hand.shuffle.openCommits[challIndex], self.tables[_tableId].hand.shuffle.revelations[challIndex], _proof)
-  if verified:
+  if self.verify(_tableId):
     self.tables[_tableId].hand.shuffle.openCommits[challIndex] = empty(bytes32)
     self.tables[_tableId].hand.shuffle.challBlock = empty(uint256)
   else:
     self.failChallenge(_tableId)
+
+@external
+def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Bytes[52]):
+  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
+  assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
+  assert self.tables[_tableId].hand.shuffle.proofs[_seatIndex].proof == empty(Bytes[52]), "already provided"
+  self.tables[_tableId].hand.shuffle.proofs[_seatIndex] = Proof({proof: _proof})
+  if self.tables[_tableId].hand.shuffle.challIndex == _seatIndex:
+    self.verifyChallenge(_tableId)
 
 @external
 def challenge(_tableId: uint256, _seatIndex: uint8):
@@ -242,15 +255,15 @@ def challenge(_tableId: uint256, _seatIndex: uint8):
   assert self.tables[_tableId].hand.shuffle.challBlock == empty(uint256), "challenge already ongoing"
   self.tables[_tableId].hand.shuffle.challBlock = block.number
   self.tables[_tableId].hand.shuffle.challIndex = _seatIndex
-  proof: Bytes[52] = slice(self.tables[_tableId].hand.shuffle.proofs, convert(_seatIndex, uint256) * 52, 52)
-  if proof != empty(Bytes[52]):
-    self.verifyChallenge(_tableId, proof)
+  if self.tables[_tableId].hand.shuffle.proofs[_seatIndex].proof != empty(Bytes[52]):
+    self.verifyChallenge(_tableId)
 
 @external
 def challengeTimeout(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].hand.shuffle.challBlock != empty(uint256), "no ongoing challenge"
-  assert block.number > self.tables[_tableId].hand.shuffle.challBlock + self.tables[_tableId].config.proveBlocks, "deadline not passed"
+  assert block.number > (self.tables[_tableId].hand.shuffle.challBlock +
+                         self.tables[_tableId].config.proveBlocks), "deadline not passed"
   self.failChallenge(_tableId)
 
 @external
