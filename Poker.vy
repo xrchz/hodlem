@@ -1,6 +1,7 @@
 # @version ^0.3.7
 # no-limit hold'em sit-n-go tournament contract
 
+# TODO: use uint256 for everything since there's no tight packing anyway
 MAX_SEATS:  constant(uint8) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint8) = 100 # maximum number of levels in tournament structure
 
@@ -47,6 +48,7 @@ def suit(card: uint8) -> uint8:
 struct Proof:
   proof: Bytes[52]
 
+# TODO: merge into Table?
 struct Shuffle:
   commitments: bytes32[MAX_SEATS]   # hashed permutations from each player
   revRequired: bool[26][MAX_SEATS]  # whether a revelation is required
@@ -63,6 +65,7 @@ struct Hand:
   live:        bool[MAX_SEATS]    # whether this player has a live hand
   actionIndex: uint8              # seat index of currently active player
   actionBlock: uint256            # block from which action was on the active player
+  revealBlock: uint256            # block from which new revelations were required
   pot:         uint256            # pot for the hand (from previous rounds)
 
 struct Config:
@@ -74,6 +77,7 @@ struct Config:
   structure:   uint256[MAX_LEVELS] # small blind levels (right-padded with blanks)
   levelBlocks: uint256             # blocks between levels
   proveBlocks: uint256             # blocks allowed for responding to a challenge
+  revBlocks:   uint256             # blocks to meet a revelation requirement
   actBlocks:   uint256             # blocks to act before folding can be triggered
 
 # not using Vyper enum because of this bug https://github.com/vyperlang/vyper/pull/3196/files#r1062141796
@@ -90,7 +94,6 @@ struct Config:
 #               # revRequired can increase
 #               # revelations come in when needed
 #               # proofs stay empty
-
 Phase_JOIN:   constant(uint256) = 0
 Phase_COMMIT: constant(uint256) = 1
 Phase_PLAY:   constant(uint256) = 2
@@ -258,6 +261,17 @@ def challengeTimeout(_tableId: uint256):
   self.failChallenge(_tableId)
 
 @external
+def revealTimeout(_tableId: uint256, _seatIndex: uint8, _cardIndex: uint8):
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].shuffle.revRequired[_seatIndex][_cardIndex], "reveal not required"
+  assert block.number > (self.tables[_tableId].hand.revealBlock +
+                         self.tables[_tableId].config.revBlocks), "deadline not passed"
+  assert self.tables[_tableId].shuffle.revelations[_seatIndex][_cardIndex] == empty(uint8), "already revealed"
+  self.tables[_tableId].shuffle.challIndex = _seatIndex
+  self.failChallenge(_tableId)
+
+@external
 def endChallengePeriod(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
@@ -331,6 +345,7 @@ def startGame(_tableId: uint256):
       if cardIndex == self.tables[_tableId].config.minPlayers:
         break
       self.tables[_tableId].shuffle.revRequired[seatIndex][cardIndex] = True
+  self.tables[_tableId].hand.revealBlock = block.number
   self.tables[_tableId].phase = Phase_COMMIT
 
 @external
@@ -374,8 +389,7 @@ def dealHoleCards(_tableId: uint256):
       cardIndex += 1
       if seatIndex == self.tables[_tableId].hand.dealer:
         break
-
-# TODO: add function to slash players that don't make required revelations
+  self.tables[_tableId].hand.revealBlock = block.number
 
 @internal
 def postBlinds(_tableId: uint256):
