@@ -49,6 +49,7 @@ struct Proof:
 
 struct Shuffle:
   commitments: bytes32[MAX_SEATS]   # hashed permutations from each player
+  revRequired: bool[26][MAX_SEATS]  # whether a revelation is required
   revelations: uint8[26][MAX_SEATS] # revealed cards from the shuffle
   openCommits: bytes32[MAX_SEATS]   # unverified commitments now open to being challenged
   challIndex:  uint8                # index of a player being actively challenged
@@ -78,7 +79,16 @@ struct Config:
 enum Phase:
   JOIN       # before the game has started, taking seats
   COMMIT     # players can make commitments, and prove or challenge previous commitments
+               # commitments starts empty, and can increase
+               # openCommits, revelations, and revRequired start possibly non-empty
+               # openCommits are cleared; their revelations and revRequireds stay stale
+               # proofs can come in
+               # when all new commitments are in, this phase can be ended and the above cleared
   PLAY       # new commitments in, challenges closed, players can reveal cards and play
+               # commitments and revRequired start non-empty, openCommits stays empty
+               # revRequired can increase
+               # revelations come in when needed
+               # proofs stay empty
 
 struct Table:
   config:      Config
@@ -145,10 +155,11 @@ def revealCard(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _cardIn
   assert self.tables[_tableId].phase == Phase.PLAY, "wrong phase"
   assert _reveal != empty(uint8), "invalid reveal"
   assert _cardIndex < 26, "invalid cardIndex"
+  assert self.tables[_tableId].shuffle.revRequired[_seatIndex][_cardIndex], "reveal not required"
   assert self.tables[_tableId].shuffle.revelations[_seatIndex][_cardIndex] == empty(uint8), "already revealed"
   # TODO: the next two are unnecessary given the phase
-  assert self.tables[_tableId].shuffle.openCommits[_seatIndex] == empty(bytes32), "previous commitment open"
-  assert self.tables[_tableId].shuffle.commitments[_seatIndex] != empty(bytes32), "not committed"
+  # assert self.tables[_tableId].shuffle.openCommits[_seatIndex] == empty(bytes32), "previous commitment open"
+  # assert self.tables[_tableId].shuffle.commitments[_seatIndex] != empty(bytes32), "not committed"
   self.tables[_tableId].shuffle.revelations[_seatIndex][_cardIndex] = _reveal
 
 @internal
@@ -158,7 +169,8 @@ def revealedCard(_tableId: uint256, _cardIndex: uint8) -> uint8:
   seatIndex: uint8 = 0
   for stack in self.tables[_tableId].stacks:
     if stack != empty(uint256) and not self.tables[_tableId].hand.live[seatIndex]:
-      assert self.tables[_tableId].shuffle.revelations[seatIndex][cardIndex] != empty(uint8), "not revealed"
+      # TODO: unnecessary if this function is only called in correct phase. also subtraction will catch it.
+      # assert self.tables[_tableId].shuffle.revelations[seatIndex][cardIndex] != empty(uint8), "not revealed"
       cardIndex = self.tables[_tableId].shuffle.revelations[seatIndex][cardIndex] - 1
     seatIndex += 1
   return cardIndex + 1
@@ -196,9 +208,8 @@ def failChallenge(_tableId: uint256):
 
 @internal
 def verifyChallenge(_tableId: uint256):
-  challIndex: uint8 = self.tables[_tableId].shuffle.challIndex
   if self.checkProof(_tableId):
-    self.tables[_tableId].shuffle.openCommits[challIndex] = empty(bytes32)
+    self.tables[_tableId].shuffle.openCommits[self.tables[_tableId].shuffle.challIndex] = empty(bytes32)
     self.tables[_tableId].shuffle.challBlock = empty(uint256)
   else:
     self.failChallenge(_tableId)
@@ -211,6 +222,7 @@ def placeBet(_tableId: uint256, _seatIndex: uint8, _size: uint256):
 def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Bytes[52]):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase.COMMIT, "wrong phase"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   assert self.tables[_tableId].shuffle.proofs[_seatIndex].proof == empty(Bytes[52]), "already provided"
@@ -248,8 +260,9 @@ def endChallengePeriod(_tableId: uint256):
     if self.tables[_tableId].stacks[seatIndex] == empty(uint256):
       continue
     assert self.tables[_tableId].shuffle.commitment[seatIndex] != empty(bytes32), "missing commitment"
-    self.tables[_tableId].shuffle.openCommits[seatIndex] = empty(bytes32)
-    self.tables[_tableId].shuffle.revelations[seatIndex] = empty(uint8[26])
+  self.tables[_tableId].shuffle.openCommits = empty(bytes32[MAX_SEATS])
+  self.tables[_tableId].shuffle.revRequired = empty(bool[26][MAX_SEATS])
+  self.tables[_tableId].shuffle.revelations = empty(uint8[26][MAX_SEATS])
   self.tables[_tableId].phase = Phase.PLAY
 
 @external
@@ -302,11 +315,10 @@ def leaveTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint8):
 def startGame(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase.JOIN, "wrong phase"
-  numSeated: uint8 = 0
-  for playerId in self.tables[_tableId].seats:
-    if playerId != empty(uint256):
-      numSeated += 1
-  assert numSeated == self.tables[_tableId].config.minPlayers, "not enough players"
+  for seatIndex in range(self.tables[_tableId].config.minPlayers):
+    assert self.tables[_tableId].seats[seatIndex] != empty(uint256), "not enough players"
+    for cardIndex in range(self.tables[_tableId].config.minPlayers):
+      self.tables[_tableId].shuffle.revRequired[seatIndex][cardIndex] = True
   self.tables[_tableId].phase = Phase.COMMIT
 
 @external
@@ -326,8 +338,8 @@ def selectDealer(_tableId: uint256):
       highestCard = card
       highestCardSeatIndex = seatIndex
     self.tables[_tableId].shuffle.openCommits[seatIndex] = self.tables[_tableId].shuffle.commitments[seatIndex]
-    self.tables[_tableId].shuffle.commitments[seatIndex] = empty(bytes32)
     seatIndex += 1
+  self.tables[_tableId].shuffle.commitments = empty(bytes32[MAX_SEATS])
   self.tables[_tableId].hand.dealer = highestCardSeatIndex
   self.tables[_tableId].startBlock = block.number
   self.tables[_tableId].phase = Phase.COMMIT
@@ -337,8 +349,19 @@ def dealHoleCards(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase.PLAY, "wrong phase"
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
-  # TODO: check that the right parts of the shuffles have been revealed
-  # TODO: need to be able to slash players that don't reveal or reveal too much
+  cardIndex: uint8 = 0
+  seatIndex: uint8 = self.tables[_tableId].hand.dealer
+  for _ in range(2):
+    for _ in range(MAX_SEATS):
+      seatIndex = self.nextPlayer(_tableId, seatIndex)
+      for otherIndex in range(self.tables[_tableId].config.minPlayers):
+        if self.tables[_tableId].seats[otherIndex] != empty(uint256) and otherIndex != seatIndex:
+          self.tables[_tableId].shuffle.revRequired[otherIndex][cardIndex] = True
+      cardIndex += 1
+      if seatIndex == self.tables[_tableId].hand.dealer:
+        break
+
+# TODO: add function to slash players that don't make required revelations
 
 @internal
 def postBlinds(_tableId: uint256):
