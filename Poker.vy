@@ -1,6 +1,8 @@
 # @version ^0.3.7
 # no-limit hold'em sit-n-go tournament contract
 
+# TODO: add rake (rewards tabs for progress txns)?
+
 # TODO: use uint256 for everything since there's no tight packing anyway
 MAX_SEATS:  constant(uint8) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint8) = 100 # maximum number of levels in tournament structure
@@ -60,6 +62,7 @@ struct Shuffle:
 
 struct Hand:
   dealer:      uint8              # seat index of current dealer
+  deckIndex:   uint8              # index of next card in deck
   board:       uint8[5]           # board cards
   bet:         uint256[MAX_SEATS] # current round bet of each player
   live:        bool[MAX_SEATS]    # whether this player has a live hand
@@ -376,7 +379,7 @@ def dealHoleCards(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
-  cardIndex: uint8 = 0
+  self.tables[_tableId].hand.deckIndex = 0
   seatIndex: uint8 = self.tables[_tableId].hand.dealer
   for __ in range(2):
     for _ in range(MAX_SEATS):
@@ -385,18 +388,27 @@ def dealHoleCards(_tableId: uint256):
         if otherIndex == self.tables[_tableId].config.minPlayers:
           break
         if self.tables[_tableId].seats[otherIndex] != empty(uint256) and otherIndex != seatIndex:
-          self.tables[_tableId].shuffle.revRequired[otherIndex][cardIndex] = True
-      cardIndex += 1
+          self.tables[_tableId].shuffle.revRequired[otherIndex][self.tables[_tableId].hand.deckIndex] = True
+      self.tables[_tableId].hand.deckIndex += 1
       if seatIndex == self.tables[_tableId].hand.dealer:
         break
   self.tables[_tableId].hand.revealBlock = block.number
+  self.tables[_tableId].hand.actionBlock = empty(uint256)
 
-@internal
+@external
 def postBlinds(_tableId: uint256):
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
+  assert self.tables[_tableId].hand.board == empty(uint8[5]), "board not empty"
+  assert self.tables[_tableId].actionBlock == empty(uint256), "already betting"
+  # TODO: assert all hole card revelations have been made
   seatIndex: uint8 = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
   smallBlind: uint256 = self.smallBlind(_tableId)
   self.placeBet(_tableId, seatIndex, smallBlind)
   seatIndex = self.nextPlayer(_tableId, seatIndex)
   self.placeBet(_tableId, seatIndex, smallBlind + smallBlind)
   seatIndex = self.nextPlayer(_tableId, seatIndex)
+  self.tables[_tableId].hand.revealBlock = empty(uint256)
   self.tables[_tableId].hand.actionIndex = seatIndex
+  self.tables[_tableId].hand.actionBlock = block.number
