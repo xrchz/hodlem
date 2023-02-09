@@ -76,23 +76,29 @@ struct Config:
   proveBlocks: uint256             # blocks allowed for responding to a challenge
   actBlocks:   uint256             # blocks to act before folding can be triggered
 
-enum Phase:
-  JOIN       # before the game has started, taking seats
-  COMMIT     # players can make commitments, and prove or challenge previous commitments
-               # commitments starts empty, and can increase
-               # openCommits, revelations, and revRequired start possibly non-empty
-               # openCommits are cleared; their revelations and revRequireds stay stale
-               # proofs can come in
-               # when all new commitments are in, this phase can be ended and the above cleared
-  PLAY       # new commitments in, challenges closed, players can reveal cards and play
-               # commitments and revRequired start non-empty, openCommits stays empty
-               # revRequired can increase
-               # revelations come in when needed
-               # proofs stay empty
+# not using Vyper enum because of this bug https://github.com/vyperlang/vyper/pull/3196/files#r1062141796
+#enum Phase:
+#  JOIN       # before the game has started, taking seats
+#  COMMIT     # players can make commitments, and prove or challenge previous commitments
+#               # commitments starts empty, and can increase
+#               # openCommits, revelations, and revRequired start possibly non-empty
+#               # openCommits are cleared; their revelations and revRequireds stay stale
+#               # proofs can come in
+#               # when all new commitments are in, this phase can be ended and the above cleared
+#  PLAY       # new commitments in, challenges closed, players can reveal cards and play
+#               # commitments and revRequired start non-empty, openCommits stays empty
+#               # revRequired can increase
+#               # revelations come in when needed
+#               # proofs stay empty
+
+Phase_JOIN:   constant(uint256) = 0
+Phase_COMMIT: constant(uint256) = 1
+Phase_PLAY:   constant(uint256) = 2
 
 struct Table:
   config:      Config
-  phase:       Phase
+  # phase:       Phase
+  phase:       uint256
   startBlock:  uint256              # block number when game started
   seats:       uint256[MAX_SEATS]   # playerIds in seats as at the start of the game
   stacks:      uint256[MAX_SEATS]   # stack at each seat (zero for eliminated or all-in players)
@@ -142,7 +148,7 @@ def commit(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _hashed_com
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex" # TODO: unnecessary
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
-  assert self.tables[_tableId].phase == Phase.COMMIT, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
   assert self.tables[_tableId].shuffle.commitments[_seatIndex] == empty(bytes32), "already committed"
   self.tables[_tableId].shuffle.commitments[_seatIndex] = _hashed_commitment
 
@@ -152,7 +158,7 @@ def revealCard(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _cardIn
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex" # TODO: unnecessary
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
-  assert self.tables[_tableId].phase == Phase.PLAY, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert _reveal != empty(uint8), "invalid reveal"
   assert _cardIndex < 26, "invalid cardIndex"
   assert self.tables[_tableId].shuffle.revRequired[_seatIndex][_cardIndex], "reveal not required"
@@ -222,7 +228,7 @@ def placeBet(_tableId: uint256, _seatIndex: uint8, _size: uint256):
 def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Bytes[52]):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.COMMIT, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   assert self.tables[_tableId].shuffle.proofs[_seatIndex].proof == empty(Bytes[52]), "already provided"
@@ -233,7 +239,7 @@ def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Byte
 @external
 def challenge(_tableId: uint256, _seatIndex: uint8):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.COMMIT, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
   assert self.tables[_tableId].shuffle.openCommits[_seatIndex] != empty(bytes32), "no open commitment"
   assert self.tables[_tableId].shuffle.challBlock == empty(uint256), "ongoing challenge"
@@ -245,7 +251,7 @@ def challenge(_tableId: uint256, _seatIndex: uint8):
 @external
 def challengeTimeout(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.COMMIT, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
   assert self.tables[_tableId].shuffle.challBlock != empty(uint256), "no ongoing challenge"
   assert block.number > (self.tables[_tableId].shuffle.challBlock +
                          self.tables[_tableId].config.proveBlocks), "deadline not passed"
@@ -254,16 +260,18 @@ def challengeTimeout(_tableId: uint256):
 @external
 def endChallengePeriod(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.COMMIT, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
   assert self.tables[_tableId].shuffle.challBlock == empty(uint256), "ongoing challenge"
-  for seatIndex in range(self.tables[_tableId].config.minPlayers):
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == self.tables[_tableId].config.minPlayers:
+      break
     if self.tables[_tableId].stacks[seatIndex] == empty(uint256):
       continue
-    assert self.tables[_tableId].shuffle.commitment[seatIndex] != empty(bytes32), "missing commitment"
+    assert self.tables[_tableId].shuffle.commitments[seatIndex] != empty(bytes32), "missing commitment"
   self.tables[_tableId].shuffle.openCommits = empty(bytes32[MAX_SEATS])
   self.tables[_tableId].shuffle.revRequired = empty(bool[26][MAX_SEATS])
   self.tables[_tableId].shuffle.revelations = empty(uint8[26][MAX_SEATS])
-  self.tables[_tableId].phase = Phase.PLAY
+  self.tables[_tableId].phase = Phase_PLAY
 
 @external
 def __init__():
@@ -283,7 +291,7 @@ def createTable(_playerId: uint256, _seatIndex: uint8, _config: Config):
   assert 0 < _config.buyIn, "invalid buyIn"
   assert _seatIndex < _config.minPlayers, "invalid seatIndex"
   assert msg.value == _config.bond + _config.buyIn, "incorrect bond + buyIn"
-  self.tables[_config.tableId].phase = Phase.JOIN
+  self.tables[_config.tableId].phase = Phase_JOIN
   self.tables[_config.tableId].config = _config
   self.tables[_config.tableId].seats[_seatIndex] = _playerId
   self.tables[_config.tableId].stacks[_seatIndex] = _config.buyIn
@@ -293,7 +301,7 @@ def createTable(_playerId: uint256, _seatIndex: uint8, _config: Config):
 def joinTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint8):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.JOIN, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == empty(uint256), "seatIndex unavailable"
   assert msg.value == self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn, "incorrect bond + buyIn"
@@ -304,7 +312,7 @@ def joinTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint8):
 def leaveTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint8):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.JOIN, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   self.tables[_tableId].seats[_seatIndex] = empty(uint256)
@@ -314,17 +322,21 @@ def leaveTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint8):
 @external
 def startGame(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.JOIN, "wrong phase"
-  for seatIndex in range(self.tables[_tableId].config.minPlayers):
+  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == self.tables[_tableId].config.minPlayers:
+      break
     assert self.tables[_tableId].seats[seatIndex] != empty(uint256), "not enough players"
-    for cardIndex in range(self.tables[_tableId].config.minPlayers):
+    for cardIndex in range(MAX_SEATS):
+      if cardIndex == self.tables[_tableId].config.minPlayers:
+        break
       self.tables[_tableId].shuffle.revRequired[seatIndex][cardIndex] = True
-  self.tables[_tableId].phase = Phase.COMMIT
+  self.tables[_tableId].phase = Phase_COMMIT
 
 @external
 def selectDealer(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.PLAY, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert self.tables[_tableId].startBlock == empty(uint256), "already started"
   highestCard: uint8 = empty(uint8)
   highestCardSeatIndex: uint8 = empty(uint8)
@@ -342,19 +354,21 @@ def selectDealer(_tableId: uint256):
   self.tables[_tableId].shuffle.commitments = empty(bytes32[MAX_SEATS])
   self.tables[_tableId].hand.dealer = highestCardSeatIndex
   self.tables[_tableId].startBlock = block.number
-  self.tables[_tableId].phase = Phase.COMMIT
+  self.tables[_tableId].phase = Phase_COMMIT
 
 @external
 def dealHoleCards(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase.PLAY, "wrong phase"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
   cardIndex: uint8 = 0
   seatIndex: uint8 = self.tables[_tableId].hand.dealer
-  for _ in range(2):
+  for __ in range(2):
     for _ in range(MAX_SEATS):
       seatIndex = self.nextPlayer(_tableId, seatIndex)
-      for otherIndex in range(self.tables[_tableId].config.minPlayers):
+      for otherIndex in range(MAX_SEATS):
+        if otherIndex == self.tables[_tableId].config.minPlayers:
+          break
         if self.tables[_tableId].seats[otherIndex] != empty(uint256) and otherIndex != seatIndex:
           self.tables[_tableId].shuffle.revRequired[otherIndex][cardIndex] = True
       cardIndex += 1
