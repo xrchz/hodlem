@@ -80,8 +80,8 @@ struct Config:
   tableId:     uint256             # table id (can be reused after table is finished)
   buyIn:       uint256             # entry ticket price per player
   bond:        uint256             # liveness bond for each player
-  minPlayers:  uint8               # game can start when this many players are seated
-  maxPlayers:  uint8               # game ends when this many players are left
+  startsWith:  uint8               # game can start when this many players are seated
+  untilLeft:   uint8               # game ends when this many players are left
   structure:   uint256[MAX_LEVELS] # small blind levels (right-padded with blanks)
   levelBlocks: uint256             # blocks between levels
   proveBlocks: uint256             # blocks allowed for responding to a challenge
@@ -123,7 +123,7 @@ tables: HashMap[uint256, Table]
 def nextPlayer(_tableId: uint256, _seatIndex: uint8) -> uint8:
   nextIndex: uint8 = _seatIndex
   for _ in range(MAX_SEATS):
-    if nextIndex == self.tables[_tableId].config.minPlayers:
+    if nextIndex == self.tables[_tableId].config.startsWith:
       nextIndex = 0
     else:
       nextIndex += 1
@@ -131,7 +131,8 @@ def nextPlayer(_tableId: uint256, _seatIndex: uint8) -> uint8:
         not self.tables[_tableId].hand.live[nextIndex]):
       continue
     else:
-      break
+      return nextIndex
+  assert False, "no live players"
   return nextIndex
 
 @internal
@@ -163,7 +164,7 @@ def placeBet(_tableId: uint256, _seatIndex: uint8, _size: uint256):
 def commit(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _hashed_commitment: bytes32):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex" # TODO: unnecessary
+  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex" # TODO: unnecessary
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
   assert self.tables[_tableId].shuffle.commitments[_seatIndex] == empty(bytes32), "already committed"
@@ -173,7 +174,7 @@ def commit(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _hashed_com
 def revealCard(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _cardIndex: uint8, _reveal: uint8):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex" # TODO: unnecessary
+  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex" # TODO: unnecessary
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert _reveal != empty(uint8), "invalid reveal"
@@ -189,7 +190,7 @@ def revealCard(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _cardIn
 @view
 def checkRevelations(_tableId: uint256) -> bool:
   for seatIndex in range(MAX_SEATS):
-    if seatIndex == self.tables[_tableId].config.minPlayers:
+    if seatIndex == self.tables[_tableId].config.startsWith:
       break
     if (self.tables[_tableId].stacks[seatIndex] == empty(uint256) and
         not self.tables[_tableId].hand.live[seatIndex]):
@@ -257,7 +258,7 @@ def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Byte
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
-  assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
+  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   assert self.tables[_tableId].shuffle.proofs[_seatIndex].proof == empty(Bytes[52]), "already provided"
   self.tables[_tableId].shuffle.proofs[_seatIndex] = Proof({proof: _proof})
@@ -268,7 +269,7 @@ def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Byte
 def challenge(_tableId: uint256, _seatIndex: uint8):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
-  assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
+  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
   assert self.tables[_tableId].shuffle.openCommits[_seatIndex] != empty(bytes32), "no open commitment"
   assert self.tables[_tableId].shuffle.challBlock == empty(uint256), "ongoing challenge"
   self.tables[_tableId].shuffle.challBlock = block.number
@@ -290,6 +291,7 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint8, _cardIndex: uint8):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert self.tables[_tableId].shuffle.revRequired[_seatIndex][_cardIndex] != Req_HIDE, "reveal not required"
+  # assert self.tables[_tableId].hand.revealBlock != empty(uint256), "no ongoing revelations" # TODO: unnecessary?
   assert block.number > (self.tables[_tableId].hand.revealBlock +
                          self.tables[_tableId].config.revBlocks), "deadline not passed"
   assert self.tables[_tableId].shuffle.revelations[_seatIndex][_cardIndex] == empty(uint8), "already revealed"
@@ -302,7 +304,7 @@ def endChallengePeriod(_tableId: uint256):
   assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
   assert self.tables[_tableId].shuffle.challBlock == empty(uint256), "ongoing challenge"
   for seatIndex in range(MAX_SEATS):
-    if seatIndex == self.tables[_tableId].config.minPlayers:
+    if seatIndex == self.tables[_tableId].config.startsWith:
       break
     if self.tables[_tableId].stacks[seatIndex] == empty(uint256):
       continue
@@ -322,13 +324,13 @@ def createTable(_playerId: uint256, _seatIndex: uint8, _config: Config):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert _config.tableId != empty(uint256), "invalid tableId"
   assert self.tables[_config.tableId].config.tableId == empty(uint256), "tableId unavailable"
-  assert 1 < _config.minPlayers, "invalid minPlayers"
-  assert _config.minPlayers <= MAX_SEATS, "invalid minPlayers"
-  assert _config.maxPlayers < _config.minPlayers, "invalid maxPlayers"
-  assert 0 < _config.maxPlayers, "invalid maxPlayers"
+  assert 1 < _config.startsWith, "invalid startsWith"
+  assert _config.startsWith <= MAX_SEATS, "invalid startsWith"
+  assert _config.untilLeft < _config.startsWith, "invalid untilLeft"
+  assert 0 < _config.untilLeft, "invalid untilLeft"
   assert 0 < _config.structure[0], "invalid structure"
   assert 0 < _config.buyIn, "invalid buyIn"
-  assert _seatIndex < _config.minPlayers, "invalid seatIndex"
+  assert _seatIndex < _config.startsWith, "invalid seatIndex"
   assert msg.value == _config.bond + _config.buyIn, "incorrect bond + buyIn"
   self.tables[_config.tableId].phase = Phase_JOIN
   self.tables[_config.tableId].config = _config
@@ -341,7 +343,7 @@ def joinTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint8):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
-  assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
+  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == empty(uint256), "seatIndex unavailable"
   assert msg.value == self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn, "incorrect bond + buyIn"
   self.tables[_tableId].seats[_seatIndex] = _playerId
@@ -352,7 +354,7 @@ def leaveTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint8):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
-  assert _seatIndex < self.tables[_tableId].config.minPlayers, "invalid seatIndex"
+  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   self.tables[_tableId].seats[_seatIndex] = empty(uint256)
   self.tables[_tableId].stacks[_seatIndex] = empty(uint256)
@@ -363,11 +365,11 @@ def startGame(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   for seatIndex in range(MAX_SEATS):
-    if seatIndex == self.tables[_tableId].config.minPlayers:
+    if seatIndex == self.tables[_tableId].config.startsWith:
       break
     assert self.tables[_tableId].seats[seatIndex] != empty(uint256), "not enough players"
     for cardIndex in range(MAX_SEATS):
-      if cardIndex == self.tables[_tableId].config.minPlayers:
+      if cardIndex == self.tables[_tableId].config.startsWith:
         break
       self.tables[_tableId].shuffle.revRequired[seatIndex][cardIndex] = Req_MUST_SHOW
   self.tables[_tableId].hand.revealBlock = block.number
@@ -410,7 +412,7 @@ def dealHoleCards(_tableId: uint256):
     for _ in range(MAX_SEATS):
       seatIndex = self.nextPlayer(_tableId, seatIndex)
       for otherIndex in range(MAX_SEATS):
-        if otherIndex == self.tables[_tableId].config.minPlayers:
+        if otherIndex == self.tables[_tableId].config.startsWith:
           break
         if self.tables[_tableId].seats[otherIndex] != empty(uint256) and otherIndex != seatIndex:
           self.tables[_tableId].shuffle.revRequired[otherIndex][
@@ -440,6 +442,27 @@ def postBlinds(_tableId: uint256):
   self.tables[_tableId].hand.actionIndex = seatIndex
   self.tables[_tableId].hand.actionBlock = block.number
 
+@internal
+def endTurn(_tableId: uint256, _seatIndex: uint8):
+  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
+  if self.tables[_tableId].hand.actionIndex == self.nextPlayer(_tableId, self.tables[_tableId].hand.actionIndex):
+    # actionIndex wins the round as last player standing
+    # give the winner the pot
+    self.tables[_tableId].stacks[self.tables[_tableId].hand.actionIndex] += self.tables[_tableId].hand.pot
+    self.tables[_tableId].hand.pot = 0
+    # (eliminate any all-in players -- impossible as only winner left standing)
+    # (check if untilLeft is reached -- impossible as nobody was eliminated)
+    # progress the dealer
+    for seatIndex in range(MAX_SEATS):
+      if seatIndex == self.tables[_tableId].config.startsWith:
+        break
+      self.tables[_tableId].hand.live[seatIndex] = self.tables[_tableId].stacks[seatIndex] > 0
+    self.tables[_tableId].hand.dealer = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
+    # reshuffle: enter commit phase for next round
+    pass # TODO
+  else:
+    self.tables[_tableId].hand.actionBlock = block.number
+
 @external
 def fold(_tableId: uint256, _playerId: uint256, _seatIndex: uint8):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
@@ -449,8 +472,18 @@ def fold(_tableId: uint256, _playerId: uint256, _seatIndex: uint8):
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
   assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
   assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
-  assert self.tables[_tableId].hand.live[_seatIndex], "already folded" # TODO: unnecessary
+  # assert self.tables[_tableId].hand.live[_seatIndex], "already folded" # TODO: unnecessary
   self.tables[_tableId].hand.live[_seatIndex] = False
-  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
-  self.tables[_tableId].hand.actionBlock = block.number
-  # TODO: check if the betting round is over
+  self.endTurn(_tableId, _seatIndex)
+
+@external
+def actTimeout(_tableId: uint256):
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert block.number > (self.tables[_tableId].hand.actionBlock +
+                         self.tables[_tableId].config.actBlocks), "deadline not passed"
+  # assert self.tables[_tableId].hand.live[self.tables[_tableId].hand.actionIndex], "already folded" # TODO: unnecessary
+  self.tables[_tableId].hand.live[self.tables[_tableId].hand.actionIndex] = False
+  self.endTurn(_tableId, self.tables[_tableId].hand.actionIndex)
