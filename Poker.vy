@@ -153,6 +153,12 @@ def smallBlind(_tableId: uint256) -> uint256:
       break
   return self.tables[_tableId].config.structure[level]
 
+@internal
+def placeBet(_tableId: uint256, _seatIndex: uint8, _size: uint256):
+  amount: uint256 = min(_size, self.tables[_tableId].stacks[_seatIndex])
+  self.tables[_tableId].stacks[_seatIndex] -= amount
+  self.tables[_tableId].hand.bet[_seatIndex] += amount
+
 @external
 def commit(_playerId: uint256, _tableId: uint256, _seatIndex: uint8, _hashed_commitment: bytes32):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
@@ -245,10 +251,6 @@ def verifyChallenge(_tableId: uint256):
     self.tables[_tableId].shuffle.challBlock = empty(uint256)
   else:
     self.failChallenge(_tableId)
-
-@internal
-def placeBet(_tableId: uint256, _seatIndex: uint8, _size: uint256):
-  pass
 
 @external
 def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint8, _proof: Bytes[52]):
@@ -399,6 +401,9 @@ def dealHoleCards(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
+  self.tables[_tableId].hand.live = empty(bool[MAX_SEATS])
+  self.tables[_tableId].hand.bet = empty(uint256[MAX_SEATS])
+  self.tables[_tableId].hand.pot = empty(uint256)
   self.tables[_tableId].hand.deckIndex = 0
   seatIndex: uint8 = self.tables[_tableId].hand.dealer
   for __ in range(2):
@@ -410,6 +415,7 @@ def dealHoleCards(_tableId: uint256):
         if self.tables[_tableId].seats[otherIndex] != empty(uint256) and otherIndex != seatIndex:
           self.tables[_tableId].shuffle.revRequired[otherIndex][
             self.tables[_tableId].hand.deckIndex] = Req_MUST_SHOW
+      self.tables[_tableId].hand.live[seatIndex] = True
       self.tables[_tableId].hand.deckIndex += 1
       if seatIndex == self.tables[_tableId].hand.dealer:
         break
@@ -433,3 +439,18 @@ def postBlinds(_tableId: uint256):
   self.tables[_tableId].hand.revealBlock = empty(uint256)
   self.tables[_tableId].hand.actionIndex = seatIndex
   self.tables[_tableId].hand.actionBlock = block.number
+
+@external
+def fold(_tableId: uint256, _playerId: uint256, _seatIndex: uint8):
+  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
+  assert self.tables[_tableId].hand.live[_seatIndex], "already folded" # TODO: unnecessary
+  self.tables[_tableId].hand.live[_seatIndex] = False
+  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
+  self.tables[_tableId].hand.actionBlock = block.number
+  # TODO: check if the betting round is over
