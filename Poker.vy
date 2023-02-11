@@ -60,6 +60,7 @@ struct Hand:
   board:       uint256[5]         # board cards
   bet:         uint256[MAX_SEATS] # current round bet of each player
   live:        bool[MAX_SEATS]    # whether this player has a live hand
+  betIndex:    uint256            # seat index of player who introduced the bet, or startsWith for no bet
   actionIndex: uint256            # seat index of currently active player
   actionBlock: uint256            # block from which action was on the active player
   revealBlock: uint256            # block from which new revelations were required
@@ -441,10 +442,12 @@ def postBlinds(_tableId: uint256):
   seatIndex = self.nextPlayer(_tableId, seatIndex)
   self.tables[_tableId].hand.revealBlock = empty(uint256)
   self.tables[_tableId].hand.actionIndex = seatIndex
+  self.tables[_tableId].hand.betIndex = self.tables[_tableId].config.startsWith
   self.tables[_tableId].hand.actionBlock = block.number
 
 @internal
-def endTurn(_tableId: uint256, _seatIndex: uint256):
+def foldNext(_tableId: uint256, _seatIndex: uint256):
+  self.tables[_tableId].hand.live[_seatIndex] = False
   self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
   if self.tables[_tableId].hand.actionIndex == self.nextPlayer(_tableId, self.tables[_tableId].hand.actionIndex):
     # actionIndex wins the round as last player standing
@@ -459,7 +462,7 @@ def endTurn(_tableId: uint256, _seatIndex: uint256):
         break
       self.tables[_tableId].hand.live[seatIndex] = self.tables[_tableId].stacks[seatIndex] > 0
     self.tables[_tableId].hand.dealer = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
-    # reshuffle: enter commit phase for next round
+    # reshuffle: enter commit phase for next hand
     self.tables[_tableId].openCommits = self.tables[_tableId].commitments
     self.tables[_tableId].commitments = empty(bytes32[MAX_SEATS])
     self.tables[_tableId].commitBlock = block.number
@@ -475,9 +478,7 @@ def fold(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
   assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
   assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
-  # assert self.tables[_tableId].hand.live[_seatIndex], "already folded" # TODO: unnecessary
-  self.tables[_tableId].hand.live[_seatIndex] = False
-  self.endTurn(_tableId, _seatIndex)
+  self.foldNext(_tableId, _seatIndex)
 
 @external
 def actTimeout(_tableId: uint256):
@@ -487,10 +488,16 @@ def actTimeout(_tableId: uint256):
   assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
   assert block.number > (self.tables[_tableId].hand.actionBlock +
                          self.tables[_tableId].config.actBlocks), "deadline not passed"
-  # assert self.tables[_tableId].hand.live[self.tables[_tableId].hand.actionIndex], "already folded" # TODO: unnecessary
-  self.tables[_tableId].hand.live[self.tables[_tableId].hand.actionIndex] = False
-  self.endTurn(_tableId, self.tables[_tableId].hand.actionIndex)
+  self.foldNext(_tableId, self.tables[_tableId].hand.actionIndex)
 
 @external
 def check(_tableId: uint256, _seatIndex: uint256):
-  pass
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
+  assert self.tables[_tableId].hand.betIndex == self.tables[_tableId].config.startsWith, "bet required"
+  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
+  self.tables[_tableId].hand.actionBlock = block.number
