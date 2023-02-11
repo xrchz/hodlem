@@ -73,7 +73,8 @@ struct Config:
   untilLeft:   uint256             # game ends when this many players are left
   structure:   uint256[MAX_LEVELS] # small blind levels (right-padded with blanks)
   levelBlocks: uint256             # blocks between levels
-  proveBlocks: uint256             # blocks allowed for responding to a challenge
+  proveBlocks: uint256             # blocks to respond to a challenge
+  dealBlocks:  uint256             # blocks to commit to a shuffle
   revBlocks:   uint256             # blocks to meet a revelation requirement
   actBlocks:   uint256             # blocks to act before folding can be triggered
 
@@ -103,6 +104,7 @@ struct Table:
   seats:       uint256[MAX_SEATS]   # playerIds in seats as at the start of the game
   stacks:      uint256[MAX_SEATS]   # stack at each seat (zero for eliminated or all-in players)
   hand:        Hand                 # current Hand
+  commitBlock: uint256                # block from which new commitments were required
   commitments: bytes32[MAX_SEATS]     # hashed permutations from each player
   revRequired: uint256[26][MAX_SEATS] # whether a revelation is required
   revelations: uint256[26][MAX_SEATS] # revealed cards from the shuffle
@@ -273,6 +275,18 @@ def challenge(_tableId: uint256, _seatIndex: uint256):
     self.verifyChallenge(_tableId)
 
 @external
+def commitTimeout(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
+  assert self.tables[_tableId].commitBlock != empty(uint256), "commitments not required"
+  assert block.number > (self.tables[_tableId].commitBlock +
+                         self.tables[_tableId].config.dealBlocks), "deadline not passed"
+  assert self.tables[_tableId].stacks[_seatIndex] != empty(uint256), "already eliminated"
+  assert self.tables[_tableId].commitments[_seatIndex] == empty(bytes32), "already committed"
+  self.tables[_tableId].challIndex = _seatIndex
+  self.failChallenge(_tableId)
+
+@external
 def challengeTimeout(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
@@ -307,6 +321,7 @@ def endChallengePeriod(_tableId: uint256):
   self.tables[_tableId].openCommits = empty(bytes32[MAX_SEATS])
   self.tables[_tableId].revRequired = empty(uint256[26][MAX_SEATS])
   self.tables[_tableId].revelations = empty(uint256[26][MAX_SEATS])
+  self.tables[_tableId].commitBlock = empty(uint256)
   self.tables[_tableId].phase = Phase_PLAY
 
 @external
@@ -367,7 +382,7 @@ def startGame(_tableId: uint256):
       if cardIndex == self.tables[_tableId].config.startsWith:
         break
       self.tables[_tableId].revRequired[seatIndex][cardIndex] = Req_MUST_SHOW
-  self.tables[_tableId].hand.revealBlock = block.number
+  self.tables[_tableId].commitBlock = block.number
   self.tables[_tableId].phase = Phase_COMMIT
 
 @external
@@ -453,7 +468,10 @@ def endTurn(_tableId: uint256, _seatIndex: uint256):
       self.tables[_tableId].hand.live[seatIndex] = self.tables[_tableId].stacks[seatIndex] > 0
     self.tables[_tableId].hand.dealer = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
     # reshuffle: enter commit phase for next round
-    pass # TODO
+    self.tables[_tableId].openCommits = self.tables[_tableId].commitments
+    self.tables[_tableId].commitments = empty(bytes32[MAX_SEATS])
+    self.tables[_tableId].commitBlock = block.number
+    self.tables[_tableId].phase = Phase_COMMIT
   else:
     self.tables[_tableId].hand.actionBlock = block.number
 
