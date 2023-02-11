@@ -31,6 +31,7 @@ def confirmChangePlayerAddress(_playerId: uint256):
 
 # the deck is represented by the numbers 1, ..., 52
 # spades (01-13), clubs (14-26), diamonds (27-39), hearts (40-52)
+PENDING_REVEAL: constant(uint256) = 53
 
 @internal
 @pure
@@ -173,8 +174,9 @@ def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _rev
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert _reveal != empty(uint256), "invalid reveal"
+  assert _reveal <= 52, "invalid reveal"
   assert _cardIndex < 26, "invalid cardIndex"
-  assert self.tables[_tableId].revRequired[_seatIndex][_cardIndex] != Req_HIDE, "reveal not required"
+  assert self.tables[_tableId].revRequired[_seatIndex][_cardIndex] != Req_HIDE, "reveal not allowed"
   assert self.tables[_tableId].revelations[_seatIndex][_cardIndex] == empty(uint256), "already revealed"
   # TODO: the next two are unnecessary given the phase
   # assert self.tables[_tableId].openCommits[_seatIndex] == empty(bytes32), "previous commitment open"
@@ -191,7 +193,7 @@ def checkRevelations(_tableId: uint256) -> bool:
         not self.tables[_tableId].hand.live[seatIndex]):
       continue
     for cardIndex in range(26):
-      if (self.tables[_tableId].revRequired[seatIndex][cardIndex] != Req_HIDE and
+      if (self.tables[_tableId].revRequired[seatIndex][cardIndex] == Req_MUST_SHOW and
           self.tables[_tableId].revelations[seatIndex][cardIndex] == empty(uint256)):
         return False
   return True
@@ -203,8 +205,6 @@ def revealedCard(_tableId: uint256, _cardIndex: uint256) -> uint256:
   seatIndex: uint256 = 0
   for stack in self.tables[_tableId].stacks:
     if stack != empty(uint256) or self.tables[_tableId].hand.live[seatIndex]:
-      # TODO: unnecessary if this function is only called in correct phase. also subtraction will catch it.
-      # assert self.tables[_tableId].revelations[seatIndex][cardIndex] != empty(uint256), "not revealed"
       cardIndex = self.tables[_tableId].revelations[seatIndex][cardIndex] - 1
     seatIndex += 1
   return cardIndex + 1
@@ -446,6 +446,31 @@ def postBlinds(_tableId: uint256):
   self.tables[_tableId].hand.betIndex = seatIndex
   self.tables[_tableId].hand.actionBlock = block.number
 
+@external
+def startRound(_tableId: uint256):
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
+  assert self.tables[_tableId].hand.board[2] != empty(uint256), "board empty"
+  assert self.tables[_tableId].hand.actionBlock == empty(uint256), "already betting"
+  assert self.checkRevelations(_tableId), "required revelations missing"
+  # fill the board with the revealedCards
+  boardIndex: uint256 = 5
+  cardIndex: uint256 = self.tables[_tableId].hand.deckIndex
+  for _ in range(5):
+    boardIndex -= 1
+    if self.tables[_tableId].hand.board[boardIndex] == empty(uint256):
+      continue
+    elif self.tables[_tableId].hand.board[boardIndex] == PENDING_REVEAL:
+      cardIndex -= 1
+      self.tables[_tableId].hand.board[boardIndex] = self.revealedCard(_tableId, cardIndex)
+    else:
+      break
+  self.tables[_tableId].hand.revealBlock = empty(uint256)
+  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
+  self.tables[_tableId].hand.betIndex = self.tables[_tableId].hand.actionIndex
+  self.tables[_tableId].hand.actionBlock = block.number
+
 @internal
 def foldNext(_tableId: uint256, _seatIndex: uint256):
   self.tables[_tableId].hand.live[_seatIndex] = False
@@ -483,7 +508,30 @@ def actNext(_tableId: uint256, _seatIndex: uint256):
         break
       self.tables[_tableId].hand.pot += self.tables[_tableId].hand.bet[seatIndex]
       self.tables[_tableId].hand.bet[seatIndex] = 0
-    # TODO: require revelations of next round's cards
+    # require revelations of next round's cards
+    if self.tables[_tableId].hand.board[0] == empty(uint256):
+      # deal flop
+      # burn card
+      self.tables[_tableId].hand.deckIndex += 1
+      # flop cards
+      for boardIndex in range(3):
+        for seatIndex in range(MAX_SEATS):
+          if seatIndex == self.tables[_tableId].config.startsWith:
+            break
+          self.tables[_tableId].revRequired[seatIndex][self.tables[_tableId].hand.deckIndex] = Req_MUST_SHOW
+        self.tables[_tableId].hand.deckIndex += 1
+        self.tables[_tableId].hand.board[boardIndex] = PENDING_REVEAL
+      self.tables[_tableId].hand.revealBlock = block.number
+      self.tables[_tableId].hand.actionBlock = empty(uint256)
+    elif self.tables[_tableId].hand.board[3] == empty(uint256):
+      # TODO: deal turn
+      pass
+    elif self.tables[_tableId].hand.board[4] == empty(uint256):
+      # TODO: deal river
+      pass
+    else:
+      # TODO: showdown
+      pass
 
 @external
 def fold(_tableId: uint256, _seatIndex: uint256):
@@ -517,7 +565,7 @@ def check(_tableId: uint256, _seatIndex: uint256):
   self.actNext(_tableId, _seatIndex)
 
 @external
-def call(_tableId: uint256, _seatIndex: uint256):
+def callBet(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
