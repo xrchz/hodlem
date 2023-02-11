@@ -60,7 +60,7 @@ struct Hand:
   board:       uint256[5]         # board cards
   bet:         uint256[MAX_SEATS] # current round bet of each player
   live:        bool[MAX_SEATS]    # whether this player has a live hand
-  betIndex:    uint256            # seat index of player who introduced the bet, or startsWith for no bet
+  betIndex:    uint256            # seat index of player who introduced the current bet
   actionIndex: uint256            # seat index of currently active player
   actionBlock: uint256            # block from which action was on the active player
   revealBlock: uint256            # block from which new revelations were required
@@ -128,6 +128,7 @@ def nextPlayer(_tableId: uint256, _seatIndex: uint256) -> uint256:
       nextIndex += 1
     if (self.tables[_tableId].stacks[nextIndex] == empty(uint256) and
         not self.tables[_tableId].hand.live[nextIndex]):
+      # TODO: decide if this function lands on all-in players or not
       continue
     else:
       return nextIndex
@@ -407,7 +408,7 @@ def dealHoleCards(_tableId: uint256):
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
   self.tables[_tableId].hand.live = empty(bool[MAX_SEATS])
-  self.tables[_tableId].hand.bet = empty(uint256[MAX_SEATS])
+  self.tables[_tableId].hand.bet = empty(uint256[MAX_SEATS]) # TODO: unnecessary?
   self.tables[_tableId].hand.pot = empty(uint256)
   self.tables[_tableId].hand.deckIndex = 0
   seatIndex: uint256 = self.tables[_tableId].hand.dealer
@@ -442,7 +443,7 @@ def postBlinds(_tableId: uint256):
   seatIndex = self.nextPlayer(_tableId, seatIndex)
   self.tables[_tableId].hand.revealBlock = empty(uint256)
   self.tables[_tableId].hand.actionIndex = seatIndex
-  self.tables[_tableId].hand.betIndex = self.tables[_tableId].config.startsWith
+  self.tables[_tableId].hand.betIndex = seatIndex
   self.tables[_tableId].hand.actionBlock = block.number
 
 @internal
@@ -470,6 +471,20 @@ def foldNext(_tableId: uint256, _seatIndex: uint256):
   else:
     self.tables[_tableId].hand.actionBlock = block.number
 
+@internal
+def actNext(_tableId: uint256, _seatIndex: uint256):
+  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
+  self.tables[_tableId].hand.actionBlock = block.number
+  # check if the round is complete
+  if self.tables[_tableId].hand.actionIndex == self.tables[_tableId].hand.betIndex:
+    # collect pot
+    for seatIndex in range(MAX_SEATS):
+      if seatIndex == self.tables[_tableId].config.startsWith:
+        break
+      self.tables[_tableId].hand.pot += self.tables[_tableId].hand.bet[seatIndex]
+      self.tables[_tableId].hand.bet[seatIndex] = 0
+    # TODO: require revelations of next round's cards
+
 @external
 def fold(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
@@ -484,7 +499,7 @@ def fold(_tableId: uint256, _seatIndex: uint256):
 def actTimeout(_tableId: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
   assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
   assert block.number > (self.tables[_tableId].hand.actionBlock +
                          self.tables[_tableId].config.actBlocks), "deadline not passed"
@@ -495,9 +510,20 @@ def check(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
   assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
   assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
-  assert self.tables[_tableId].hand.betIndex == self.tables[_tableId].config.startsWith, "bet required"
-  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
-  self.tables[_tableId].hand.actionBlock = block.number
+  assert self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex] == 0, "bet required"
+  self.actNext(_tableId, _seatIndex)
+
+@external
+def call(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
+  assert self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex] > 0, "no bet"
+  self.placeBet(_tableId, _seatIndex, self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex])
+  self.actNext(_tableId, _seatIndex)
