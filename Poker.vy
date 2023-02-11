@@ -158,21 +158,17 @@ def placeBet(_tableId: uint256, _seatIndex: uint256, _size: uint256):
   self.tables[_tableId].hand.bet[_seatIndex] += amount
 
 @external
-def commit(_playerId: uint256, _tableId: uint256, _seatIndex: uint256, _hashed_commitment: bytes32):
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+def commit(_tableId: uint256, _seatIndex: uint256, _hashed_commitment: bytes32):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  # assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex" # TODO: unnecessary
-  assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
   assert self.tables[_tableId].commitments[_seatIndex] == empty(bytes32), "already committed"
   self.tables[_tableId].commitments[_seatIndex] = _hashed_commitment
 
 @external
-def revealCard(_playerId: uint256, _tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _reveal: uint256):
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _reveal: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  # assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex" # TODO: unnecessary
-  assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert _reveal != empty(uint256), "invalid reveal"
   assert _cardIndex < 26, "invalid cardIndex"
@@ -251,12 +247,10 @@ def verifyChallenge(_tableId: uint256):
     self.failChallenge(_tableId)
 
 @external
-def prove(_tableId: uint256, _playerId: uint256, _seatIndex: uint256, _proof: Bytes[52]):
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+def prove(_tableId: uint256, _seatIndex: uint256, _proof: Bytes[52]):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
-  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
-  assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   assert self.tables[_tableId].proofs[_seatIndex].proof == empty(Bytes[52]), "already provided"
   self.tables[_tableId].proofs[_seatIndex] = Proof({proof: _proof})
   if self.tables[_tableId].challIndex == _seatIndex:
@@ -360,12 +354,10 @@ def joinTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint256):
   self.tables[_tableId].stacks[_seatIndex] = self.tables[_tableId].config.buyIn
 
 @external
-def leaveTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint256):
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+def leaveTable(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
-  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
-  assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
   self.tables[_tableId].seats[_seatIndex] = empty(uint256)
   self.tables[_tableId].stacks[_seatIndex] = empty(uint256)
   send(msg.sender, self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn)
@@ -476,10 +468,9 @@ def endTurn(_tableId: uint256, _seatIndex: uint256):
     self.tables[_tableId].hand.actionBlock = block.number
 
 @external
-def fold(_tableId: uint256, _playerId: uint256, _seatIndex: uint256):
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+def fold(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].seats[_seatIndex] == _playerId, "wrong player"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
   assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
@@ -499,3 +490,7 @@ def actTimeout(_tableId: uint256):
   # assert self.tables[_tableId].hand.live[self.tables[_tableId].hand.actionIndex], "already folded" # TODO: unnecessary
   self.tables[_tableId].hand.live[self.tables[_tableId].hand.actionIndex] = False
   self.endTurn(_tableId, self.tables[_tableId].hand.actionIndex)
+
+@external
+def check(_tableId: uint256, _seatIndex: uint256):
+  pass
