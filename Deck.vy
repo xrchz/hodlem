@@ -15,8 +15,8 @@ GROUP_ORDER: constant(uint256) = 21888242871839275222246405745257275088696311157
 
 # arbitrary (large) limits on deck size and number of players sharing a deck
 # note: MAX_SIZE must be < GROUP_ORDER
-MAX_SIZE: constant(uint256) = 2 ** 64
-MAX_PLAYERS: constant(uint256) = 2 ** 64
+MAX_SIZE: constant(uint256) = 2 ** 16
+MAX_PLAYERS: constant(uint256) = 2 ** 16
 MAX_SECURITY: constant(uint256) = 256
 
 struct DeckPrepCard:
@@ -37,10 +37,9 @@ struct DeckPrep:
 struct Deck:
   # authorised address for each player
   addrs: DynArray[address, MAX_PLAYERS]
-  # unencrypted cards
-  cards: DynArray[uint256[2], MAX_SIZE]
-  # shuffled encrypted cards from each player
-  shuffle: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_PLAYERS]
+  # shuffle[0] is the unencrypted cards
+  # shuffle[j+1] is the shuffled encrypted cards from player index j
+  shuffle: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_PLAYERS + 1]
   challengeReq: DynArray[uint256, MAX_PLAYERS]
   challengeRes: DynArray[DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY], MAX_PLAYERS]
   challengeRnd: uint256
@@ -61,8 +60,9 @@ def newDeck(_id: uint256, _size: uint256, _players: uint256):
       break
     self.decks[_id].addrs.append(msg.sender)
     self.decks[_id].prep.append(empty(DeckPrep))
+  self.decks[_id].shuffle.append([])
   for i in range(MAX_SIZE + 1):
-    self.decks[_id].cards.append(empty(uint256[2]))
+    self.decks[_id].shuffle[0].append(empty(uint256[2]))
     if i == _size:
       break
 
@@ -75,7 +75,7 @@ def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address):
 def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].prep[_playerIdx].cards) == 0, "already prepared"
-  assert len(_prep.cards) == len(self.decks[_id].cards), "wrong length"
+  assert len(_prep.cards) == len(self.decks[_id].shuffle[0]), "wrong length"
   for c in _prep.cards:
     assert (c.hx[0] != 0 or c.hx[1] != 0), "invalid point"
   self.decks[_id].prep[_playerIdx] = _prep
@@ -123,16 +123,16 @@ def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
 def finishPrep(_id: uint256) -> uint256:
   numPlayers: uint256 = len(self.decks[_id].prep)
   for cardIdx in range(MAX_SIZE):
-    if cardIdx == len(self.decks[_id].cards):
+    if cardIdx == len(self.decks[_id].shuffle[0]):
       break
-    assert (self.decks[_id].cards[cardIdx][0] == 0 and
-            self.decks[_id].cards[cardIdx][1] == 0), "already finished"
+    assert (self.decks[_id].shuffle[0][cardIdx][0] == 0 and
+            self.decks[_id].shuffle[0][cardIdx][1] == 0), "already finished"
     for playerIdx in range(MAX_PLAYERS):
       if playerIdx == numPlayers:
         break
       if self.checkPrep(_id, playerIdx, cardIdx):
-        self.decks[_id].cards[cardIdx] = ecadd(
-          self.decks[_id].cards[cardIdx],
+        self.decks[_id].shuffle[0][cardIdx] = ecadd(
+          self.decks[_id].shuffle[0][cardIdx],
           self.decks[_id].prep[playerIdx].cards[cardIdx].hx)
       else:
         return playerIdx
@@ -142,18 +142,52 @@ def finishPrep(_id: uint256) -> uint256:
 @external
 def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], MAX_SIZE]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
-  assert len(self.decks[_id].shuffle) == _playerIdx, "wrong player"
-  assert len(self.decks[_id].cards) == len(_shuffle), "wrong length"
+  assert len(self.decks[_id].shuffle) == _playerIdx + 1, "wrong player"
+  assert len(self.decks[_id].shuffle[0]) == len(_shuffle), "wrong length"
   self.decks[_id].shuffle.append(_shuffle)
   self.decks[_id].challengeReq.append(0)
 
 @external
-def challengeShuffle(_id: uint256, _playerIdx: uint256, _rounds: uint256):
+def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256):
   assert self.decks[_id].challengeReq[_playerIdx] == 0, "ongoing challenge"
   assert 0 < _rounds and _rounds <= MAX_SECURITY, "invalid rounds"
   self.decks[_id].challengeReq[_playerIdx] = _rounds
 
 @external
+@view
+def challengeActive(_id: uint256, _playerIdx: uint256) -> bool:
+  return self.decks[_id].challengeReq[_playerIdx] != 0
+
+@external
 def respondChallenge(_id: uint256, _playerIdx: uint256,
-  _data: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_PLAYERS]):
-  pass
+                     _data: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY]):
+  assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
+  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
+  assert self.decks[_id].challengeReq[_playerIdx] == len(_data), "wrong length"
+  assert len(self.decks[_id].challengeRes[_playerIdx]) == 0, "already responded"
+  self.decks[_id].challengeRes[_playerIdx] = _data
+  self.decks[_id].challengeRnd = block.prevrandao
+
+@external
+def defuseChallenge(_id: uint256, _playerIdx: uint256,
+                    _scalars: DynArray[uint256, MAX_SECURITY],
+                    _permutations: DynArray[DynArray[uint256, MAX_SIZE], MAX_SECURITY]):
+  assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
+  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
+  assert len(self.decks[_id].challengeRes[_playerIdx]) == len(_scalars), "no response"
+  assert len(_scalars) == len(_permutations), "length mismatch"
+  bits: uint256 = self.decks[_id].challengeRnd
+  for k in range(MAX_SECURITY):
+    if k == len(_scalars):
+      break
+    assert len(_permutations[k]) == len(self.decks[_id].shuffle[0]), "invalid permutation"
+    j: uint256 = _playerIdx
+    if not convert(bits & 1, bool):
+      j += 1
+    for i in range(MAX_SIZE):
+      if i == len(self.decks[_id].shuffle[0]):
+        break
+      c: uint256[2] = self.decks[_id].challengeRes[_playerIdx][k][i]
+      d: uint256[2] = ecmul(self.decks[_id].shuffle[j][_permutations[k][i]], _scalars[k])
+      assert (c[0] == d[0] and c[1] == d[1]), "verification failed"
+    bits = shift(bits, -1)
