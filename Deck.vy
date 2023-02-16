@@ -80,6 +80,13 @@ def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
 @view
 def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
   c: uint256 = convert(sha256(concat(
+      # unlike Chaum & Pederson we also include g and gx in the hash
+      # so we are hashing the statement as well as the commitment
+      # (see https://ia.cr/2016/771)
+      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].g[0], bytes32),
+      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].g[1], bytes32),
+      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].gx[0], bytes32),
+      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].gx[1], bytes32),
       convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].h[0], bytes32),
       convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].h[1], bytes32),
       convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].hx[0], bytes32),
