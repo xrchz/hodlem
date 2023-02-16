@@ -38,10 +38,8 @@ struct Deck:
   addrs: DynArray[address, MAX_PLAYERS]
   # unencrypted cards
   cards: DynArray[uint256[2], MAX_SIZE]
-  # shuffled encrypted cards
-  shuffle: DynArray[uint256[2], MAX_SIZE]
-  # index of first player who has not yet shuffled
-  shuffleIndex: uint256
+  # shuffled encrypted cards from each player
+  shuffle: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_PLAYERS]
   # data for deck preparation
   prep: DynArray[DeckPrep, MAX_PLAYERS]
 
@@ -79,6 +77,7 @@ def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
   self.decks[_id].prep[_playerIdx] = _prep
 
 @internal
+@view
 def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
   c: uint256 = convert(sha256(concat(
       convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].h[0], bytes32),
@@ -131,4 +130,7 @@ def finishPrep(_id: uint256) -> uint256:
 
 @external
 def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], MAX_SIZE]):
-  pass
+  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
+  assert len(self.decks[_id].shuffle) == _playerIdx, "wrong player"
+  assert len(self.decks[_id].cards) == len(_shuffle), "wrong length"
+  self.decks[_id].shuffle.append(_shuffle)
