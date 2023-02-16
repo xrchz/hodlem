@@ -75,9 +75,11 @@ def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].prep[_playerIdx].cards) == 0, "already prepared"
   assert len(_prep.cards) == len(self.decks[_id].cards), "wrong length"
+  for c in _prep.cards:
+    assert (c.hx.point[0] != 0 or c.hx.point[1] != 0), "invalid point"
   self.decks[_id].prep[_playerIdx] = _prep
 
-@external
+@internal
 def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
   c: uint256 = convert(sha256(concat(
       convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].h.point[0], bytes32),
@@ -105,3 +107,28 @@ def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
           gs_gxc[1] == g_scx[1] and
           hs_hxc[0] == h_scx[0] and
           hs_hxc[1] == h_scx[1])
+
+@external
+# returns index of first player that fails verification
+# or number of players on success
+def finishPrep(_id: uint256) -> uint256:
+  assert (self.decks[_id].cards[0].point[0] == 0 and
+          self.decks[_id].cards[0].point[1] == 0), "already finished"
+  numPlayers: uint256 = len(self.decks[_id].prep)
+  for cardIdx in range(MAX_SIZE):
+    if cardIdx == len(self.decks[_id].cards):
+      break
+    for playerIdx in range(MAX_PLAYERS):
+      if playerIdx == numPlayers:
+        break
+      if self.checkPrep(_id, playerIdx, cardIdx):
+        self.decks[_id].cards[cardIdx].point = ecadd(
+          self.decks[_id].cards[cardIdx].point,
+          self.decks[_id].prep[playerIdx].cards[cardIdx].hx.point)
+      else:
+        return playerIdx
+  for playerIdx in range(MAX_PLAYERS):
+    if playerIdx == numPlayers:
+      break
+    self.decks[_id].prep.pop()
+  return numPlayers
