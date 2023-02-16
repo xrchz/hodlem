@@ -67,6 +67,11 @@ def newDeck(_id: uint256, _size: uint256, _players: uint256):
       break
 
 @external
+def deleteDeck(_id: uint256):
+  assert self.decks[_id].addrs[0] == msg.sender, "unauthorised"
+  self.decks[_id] = empty(Deck)
+
+@external
 def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   self.decks[_id].addrs[_playerIdx] = _newAddress
@@ -191,3 +196,8 @@ def defuseChallenge(_id: uint256, _playerIdx: uint256,
       d: uint256[2] = ecmul(self.decks[_id].shuffle[j][_permutations[k][i]], _scalars[k])
       assert (c[0] == d[0] and c[1] == d[1]), "verification failed"
     bits = shift(bits, -1)
+  self.decks[_id].challengeReq[_playerIdx] = 0
+
+@external
+def revealCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2]):
+  pass # TODO
