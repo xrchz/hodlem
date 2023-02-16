@@ -31,6 +31,15 @@ struct DeckPrepCard:
   hs:  uint256[2] # h ** s
   scx: uint256 # s + cx (mod q), where c = hash(h, hx, gs, hs)
 
+struct DrawCard:
+  # successive decryptions
+  c: DynArray[uint256[2], MAX_PLAYERS]
+  # 1 + index of player the card is initially drawn to (i.e. they skip decryption)
+  # note: a card can only be drawn to a single player
+  drawnTo: uint256
+  # 1 + original index after reveal, or 1 + deck size if open and pending reveal
+  opensAs: uint256
+
 struct DeckPrep:
   cards: DynArray[DeckPrepCard, MAX_SIZE]
 
@@ -43,6 +52,8 @@ struct Deck:
   challengeReq: DynArray[uint256, MAX_PLAYERS]
   challengeRes: DynArray[DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY], MAX_PLAYERS]
   challengeRnd: uint256
+  # for decrypting shuffled cards
+  cards: DynArray[DrawCard, MAX_SIZE]
   # data for deck preparation
   prep: DynArray[DeckPrep, MAX_PLAYERS]
 
@@ -125,6 +136,7 @@ def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
 @external
 # returns index of first player that fails verification
 # or number of players on success
+# (deck state is undefined after failure)
 def finishPrep(_id: uint256) -> uint256:
   numPlayers: uint256 = len(self.decks[_id].prep)
   for cardIdx in range(MAX_SIZE):
@@ -141,6 +153,7 @@ def finishPrep(_id: uint256) -> uint256:
           self.decks[_id].prep[playerIdx].cards[cardIdx].hx)
       else:
         return playerIdx
+    self.decks[_id].cards.append(empty(DrawCard))
   self.decks[_id].prep = empty(DynArray[DeckPrep, MAX_PLAYERS])
   return numPlayers
 
@@ -154,6 +167,7 @@ def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[
 
 @external
 def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256):
+  assert _playerIdx + 1 < len(self.decks[_id].shuffle), "not submitted"
   assert self.decks[_id].challengeReq[_playerIdx] == 0, "ongoing challenge"
   assert 0 < _rounds and _rounds <= MAX_SECURITY, "invalid rounds"
   self.decks[_id].challengeReq[_playerIdx] = _rounds
@@ -197,7 +211,22 @@ def defuseChallenge(_id: uint256, _playerIdx: uint256,
       assert (c[0] == d[0] and c[1] == d[1]), "verification failed"
     bits = shift(bits, -1)
   self.decks[_id].challengeReq[_playerIdx] = 0
+  self.decks[_id].challengeRes[_playerIdx] = empty(
+    DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY])
 
 @external
-def revealCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2]):
-  pass # TODO
+def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256):
+  assert self.decks[_id].cards[_cardIdx].drawnTo == 0, "already drawn"
+  self.decks[_id].cards[_cardIdx].drawnTo = 1 + _playerIdx
+  self.decks[_id].cards[_cardIdx].c.append(
+    self.decks[_id].shuffle[len(self.decks[_id].addrs)][_cardIdx])
+
+@external
+def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2]):
+  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
+  assert self.decks[_id].cards[_cardIdx].drawnTo != 0, "not drawn"
+  assert len(self.decks[_id].cards[_cardIdx].c) == 1 + _playerIdx, "out of turn"
+  if _playerIdx == self.decks[_id].cards[_cardIdx].drawnTo:
+    assert (_card[0] == self.decks[_id].cards[_cardIdx].c[_playerIdx][0] and
+            _card[1] == self.decks[_id].cards[_cardIdx].c[_playerIdx][1]), "wrong card"
+  self.decks[_id].cards[_cardIdx].c.append(_card)
