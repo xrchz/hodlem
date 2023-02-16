@@ -17,6 +17,7 @@ GROUP_ORDER: constant(uint256) = 21888242871839275222246405745257275088696311157
 # note: MAX_SIZE must be < GROUP_ORDER
 MAX_SIZE: constant(uint256) = 2 ** 64
 MAX_PLAYERS: constant(uint256) = 2 ** 64
+MAX_SECURITY: constant(uint256) = 256
 
 struct DeckPrepCard:
   # g and h are random points, x is a random secret scalar
@@ -40,6 +41,9 @@ struct Deck:
   cards: DynArray[uint256[2], MAX_SIZE]
   # shuffled encrypted cards from each player
   shuffle: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_PLAYERS]
+  challengeReq: DynArray[uint256, MAX_PLAYERS]
+  challengeRes: DynArray[DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY], MAX_PLAYERS]
+  challengeRnd: uint256
   # data for deck preparation
   prep: DynArray[DeckPrep, MAX_PLAYERS]
 
@@ -141,3 +145,15 @@ def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[
   assert len(self.decks[_id].shuffle) == _playerIdx, "wrong player"
   assert len(self.decks[_id].cards) == len(_shuffle), "wrong length"
   self.decks[_id].shuffle.append(_shuffle)
+  self.decks[_id].challengeReq.append(0)
+
+@external
+def challengeShuffle(_id: uint256, _playerIdx: uint256, _rounds: uint256):
+  assert self.decks[_id].challengeReq[_playerIdx] == 0, "ongoing challenge"
+  assert 0 < _rounds and _rounds <= MAX_SECURITY, "invalid rounds"
+  self.decks[_id].challengeReq[_playerIdx] = _rounds
+
+@external
+def respondChallenge(_id: uint256, _playerIdx: uint256,
+  _data: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_PLAYERS]):
+  pass
