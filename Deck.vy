@@ -126,10 +126,7 @@ def finishPrep(_id: uint256) -> uint256:
           self.decks[_id].prep[playerIdx].cards[cardIdx].hx)
       else:
         return playerIdx
-  for playerIdx in range(MAX_PLAYERS):
-    if playerIdx == numPlayers:
-      break
-    self.decks[_id].prep.pop()
+  self.decks[_id].prep = empty(DynArray[DeckPrep, MAX_PLAYERS])
   return numPlayers
 
 @external
