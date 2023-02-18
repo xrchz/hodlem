@@ -245,14 +245,14 @@ def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
 def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
              _openIdx: uint256, _proof: uint256[5]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
-  assert self.decks[_id].cards[_cardIdx].drawnTo == 1 + playerIdx, "wrong player"
-  assert len(self.decks[_id].cards[_cardIdx]) == 1 + len(self.decks[_id].addrs), "not decrypted"
+  assert self.decks[_id].cards[_cardIdx].drawnTo == 1 + _playerIdx, "wrong player"
+  assert len(self.decks[_id].cards[_cardIdx].c) == 1 + len(self.decks[_id].addrs), "not decrypted"
   assert self.decks[_id].cards[_cardIdx].opensAs == 0, "already open"
   assert self.chaumPederson(
     self.decks[_id].shuffle[_playerIdx][0],
     self.decks[_id].shuffle[0][_openIdx],
     self.decks[_id].shuffle[1 + _playerIdx][0],
-    self.decks[_id].cards[_cardIdx][len(self.decks[_id].addrs)],
+    self.decks[_id].cards[_cardIdx].c[len(self.decks[_id].addrs)],
     [_proof[0], _proof[1]],
     [_proof[2], _proof[3]],
     _proof[4]), "verification failed"
