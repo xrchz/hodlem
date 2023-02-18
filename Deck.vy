@@ -235,7 +235,7 @@ def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
       self.decks[_id].shuffle[_playerIdx][0],
       _card,
       self.decks[_id].shuffle[1 + _playerIdx][0],
-      self.decks[_id].cards[_cardIdx].c[len(self.decks[_id].cards[_cardIdx].c) - 1],
+      self.decks[_id].cards[_cardIdx].c[_playerIdx],
       [_proof[0], _proof[1]],
       [_proof[2], _proof[3]],
       _proof[4]), "verification failed"
