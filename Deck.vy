@@ -22,14 +22,17 @@ MAX_SECURITY: constant(uint256) = 256
 struct DeckPrepCard:
   # g and h are random points, x is a random secret scalar
   g:   uint256[2]
-  gx:  uint256[2] # g ** x
   h:   uint256[2]
+  gx:  uint256[2] # g ** x
   hx:  uint256[2] # h ** x
   # signature to confirm log_g(gx) = log_h(hx)
   # s is a random secret scalar
   gs:  uint256[2] # g ** s
   hs:  uint256[2] # h ** s
   scx: uint256 # s + cx (mod q), where c = hash(h, hx, gs, hs)
+
+struct DeckPrep:
+  cards: DynArray[DeckPrepCard, MAX_SIZE]
 
 struct DrawCard:
   # successive decryptions
@@ -39,9 +42,6 @@ struct DrawCard:
   drawnTo: uint256
   # 1 + original index after reveal, or 1 + deck size if open and pending reveal
   opensAs: uint256
-
-struct DeckPrep:
-  cards: DynArray[DeckPrepCard, MAX_SIZE]
 
 struct Deck:
   # authorised address for each player
@@ -97,41 +97,39 @@ def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
   self.decks[_id].prep[_playerIdx] = _prep
 
 @internal
-@view
-def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
+@pure
+def chaumPederson(g: uint256[2], h: uint256[2],
+                  gx: uint256[2], hx: uint256[2],
+                  gs: uint256[2], hs: uint256[2], scx: uint256) -> bool:
   c: uint256 = convert(sha256(concat(
       # unlike Chaum & Pederson we also include g and gx in the hash
       # so we are hashing the statement as well as the commitment
       # (see https://ia.cr/2016/771)
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].g[0], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].g[1], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].gx[0], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].gx[1], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].h[0], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].h[1], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].hx[0], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].hx[1], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].gs[0], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].gs[1], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].hs[0], bytes32),
-      convert(self.decks[_id].prep[_playerIdx].cards[_cardIdx].hs[1], bytes32))),
+      convert(g[0], bytes32), convert(g[1], bytes32),
+      convert(h[0], bytes32), convert(h[1], bytes32),
+      convert(gx[0], bytes32), convert(gx[1], bytes32),
+      convert(hx[0], bytes32), convert(hx[1], bytes32),
+      convert(gs[0], bytes32), convert(gs[1], bytes32),
+      convert(hs[0], bytes32), convert(hs[1], bytes32))),
     uint256) % GROUP_ORDER
-  gs_gxc: uint256[2] = ecadd(
-    self.decks[_id].prep[_playerIdx].cards[_cardIdx].gs,
-    ecmul(self.decks[_id].prep[_playerIdx].cards[_cardIdx].gx, c))
-  hs_hxc: uint256[2] = ecadd(
-    self.decks[_id].prep[_playerIdx].cards[_cardIdx].hs,
-    ecmul(self.decks[_id].prep[_playerIdx].cards[_cardIdx].hx, c))
-  g_scx: uint256[2] = ecmul(
+  gs_gxc: uint256[2] = ecadd(gs, ecmul(gx, c))
+  hs_hxc: uint256[2] = ecadd(hs, ecmul(hx, c))
+  g_scx: uint256[2] = ecmul(g, scx)
+  h_scx: uint256[2] = ecmul(h, scx)
+  return (gs_gxc[0] == g_scx[0] and gs_gxc[1] == g_scx[1] and
+          hs_hxc[0] == h_scx[0] and hs_hxc[1] == h_scx[1])
+
+@internal
+@view
+def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
+  return self.chaumPederson(
     self.decks[_id].prep[_playerIdx].cards[_cardIdx].g,
-    self.decks[_id].prep[_playerIdx].cards[_cardIdx].scx)
-  h_scx: uint256[2] = ecmul(
     self.decks[_id].prep[_playerIdx].cards[_cardIdx].h,
+    self.decks[_id].prep[_playerIdx].cards[_cardIdx].gx,
+    self.decks[_id].prep[_playerIdx].cards[_cardIdx].hx,
+    self.decks[_id].prep[_playerIdx].cards[_cardIdx].gs,
+    self.decks[_id].prep[_playerIdx].cards[_cardIdx].hs,
     self.decks[_id].prep[_playerIdx].cards[_cardIdx].scx)
-  return (gs_gxc[0] == g_scx[0] and
-          gs_gxc[1] == g_scx[1] and
-          hs_hxc[0] == h_scx[0] and
-          hs_hxc[1] == h_scx[1])
 
 @external
 # returns index of first player that fails verification
@@ -216,17 +214,33 @@ def defuseChallenge(_id: uint256, _playerIdx: uint256,
 
 @external
 def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256):
+  # TODO: who should be authorised for this? anybody? dealer? player? dealer-per-player?
+  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert self.decks[_id].cards[_cardIdx].drawnTo == 0, "already drawn"
   self.decks[_id].cards[_cardIdx].drawnTo = 1 + _playerIdx
   self.decks[_id].cards[_cardIdx].c.append(
     self.decks[_id].shuffle[len(self.decks[_id].addrs)][_cardIdx])
 
 @external
-def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2]):
+def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
+                _card: uint256[2], _proof: uint256[5]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert self.decks[_id].cards[_cardIdx].drawnTo != 0, "not drawn"
   assert len(self.decks[_id].cards[_cardIdx].c) == 1 + _playerIdx, "out of turn"
   if _playerIdx == self.decks[_id].cards[_cardIdx].drawnTo:
     assert (_card[0] == self.decks[_id].cards[_cardIdx].c[_playerIdx][0] and
             _card[1] == self.decks[_id].cards[_cardIdx].c[_playerIdx][1]), "wrong card"
+  else:
+    assert self.chaumPederson(
+      self.decks[_id].shuffle[_playerIdx - 1][_cardIdx],
+      _card,
+      self.decks[_id].shuffle[_playerIdx][_cardIdx],
+      self.decks[_id].cards[_cardIdx].c[len(self.decks[_id].cards[_cardIdx].c) - 1],
+      [_proof[0], _proof[1]],
+      [_proof[2], _proof[3]],
+      _proof[4]), "verification failed"
   self.decks[_id].cards[_cardIdx].c.append(_card)
+
+@external
+def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _openIdx: uint256):
+  pass
