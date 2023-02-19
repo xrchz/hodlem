@@ -65,22 +65,24 @@ decks: HashMap[uint256, Deck]
 nextId: public(uint256)
 
 @external
-def newDeck(_size: uint256, _players: uint256):
+def newDeck(_size: uint256, _players: uint256) -> uint256:
   assert 0 < _size, "invalid size"
   assert _size <= MAX_SIZE, "invalid size"
   assert 0 < _players, "invalid players"
   assert _players <= MAX_PLAYERS, "invalid players"
+  id: uint256 = self.nextId
   for i in range(MAX_PLAYERS):
     if i == _players:
       break
-    self.decks[self.nextId].addrs.append(msg.sender)
-    self.decks[self.nextId].prep.append(empty(DeckPrep))
-  self.decks[self.nextId].shuffle.append([])
+    self.decks[id].addrs.append(msg.sender)
+    self.decks[id].prep.append(empty(DeckPrep))
+  self.decks[id].shuffle.append([])
   for i in range(MAX_SIZE + 1):
-    self.decks[self.nextId].shuffle[0].append(empty(uint256[2]))
+    self.decks[id].shuffle[0].append(empty(uint256[2]))
     if i == _size:
       break
-  self.nextId = unsafe_add(self.nextId, 1)
+  self.nextId = unsafe_add(id, 1)
+  return id
 
 @external
 def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address):
