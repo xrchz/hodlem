@@ -90,6 +90,11 @@ def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address):
   self.decks[_id].addrs[_playerIdx] = _newAddress
 
 @external
+@view
+def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool:
+  return len(self.decks[_id].prep[_playerIdx].cards) != 0
+
+@external
 def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].prep[_playerIdx].cards) == 0, "already prepared"
