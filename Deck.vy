@@ -15,8 +15,9 @@ GROUP_ORDER: constant(uint256) = 21888242871839275222246405745257275088696311157
 
 # arbitrary (large) limits on deck size and number of players sharing a deck
 # note: MAX_SIZE must be < GROUP_ORDER
+# TODO: we inline these because of https://github.com/vyperlang/vyper/issues/3294
 MAX_SIZE: constant(uint256) = 16384
-MAX_PLAYERS: constant(uint256) = 16384
+MAX_PLAYERS: constant(uint256) = 16385 # to distinguish from MAX_SIZE when inlining
 MAX_SECURITY: constant(uint256) = 256
 
 struct Proof:
@@ -35,11 +36,11 @@ struct DeckPrepCard:
   p: Proof
 
 struct DeckPrep:
-  cards: DynArray[DeckPrepCard, MAX_SIZE]
+  cards: DynArray[DeckPrepCard, 16384]
 
 struct DrawCard:
   # successive decryptions
-  c: DynArray[uint256[2], MAX_PLAYERS]
+  c: DynArray[uint256[2], 16385]
   # 1 + index of player the card is initially drawn to (i.e. they skip decryption)
   # note: a card can only be drawn to a single player
   drawnTo: uint256
@@ -48,17 +49,17 @@ struct DrawCard:
 
 struct Deck:
   # authorised address for each player
-  addrs: DynArray[address, MAX_PLAYERS]
+  addrs: DynArray[address, 16385]
   # shuffle[0] is the unencrypted cards
   # shuffle[j+1] is the shuffled encrypted cards from player index j
-  shuffle: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_PLAYERS + 1]
-  challengeReq: DynArray[uint256, MAX_PLAYERS]
-  challengeRes: DynArray[DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY], MAX_PLAYERS]
+  shuffle: DynArray[DynArray[uint256[2], 16384], 16386] # 16385 + 1] <- another Vyper bug with importing
+  challengeReq: DynArray[uint256, 16385]
+  challengeRes: DynArray[DynArray[DynArray[uint256[2], 16384], 256], 16385]
   challengeRnd: uint256
   # for decrypting shuffled cards
-  cards: DynArray[DrawCard, MAX_SIZE]
+  cards: DynArray[DrawCard, 16384]
   # data for deck preparation
-  prep: DynArray[DeckPrep, MAX_PLAYERS]
+  prep: DynArray[DeckPrep, 16385]
 
 decks: HashMap[uint256, Deck]
 nextId: public(uint256)
@@ -151,7 +152,7 @@ def finishPrep(_id: uint256) -> uint256:
   return numPlayers
 
 @external
-def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], MAX_SIZE]):
+def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 16384]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].shuffle) == unsafe_add(_playerIdx, 1), "wrong player"
   assert len(self.decks[_id].shuffle[0]) == len(_shuffle), "wrong length"
@@ -172,7 +173,7 @@ def challengeActive(_id: uint256, _playerIdx: uint256) -> bool:
 
 @external
 def respondChallenge(_id: uint256, _playerIdx: uint256,
-                     _data: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY]):
+                     _data: DynArray[DynArray[uint256[2], 16384], 256]):
   assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert self.decks[_id].challengeReq[_playerIdx] == len(_data), "wrong length"
@@ -182,8 +183,8 @@ def respondChallenge(_id: uint256, _playerIdx: uint256,
 
 @external
 def defuseChallenge(_id: uint256, _playerIdx: uint256,
-                    _scalars: DynArray[uint256, MAX_SECURITY],
-                    _permutations: DynArray[DynArray[uint256, MAX_SIZE], MAX_SECURITY]):
+                    _scalars: DynArray[uint256, 256],
+                    _permutations: DynArray[DynArray[uint256, 16384], 256]):
   assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].challengeRes[_playerIdx]) == len(_scalars), "no response"
