@@ -106,11 +106,12 @@ def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
 
 @internal
 @pure
-def chaumPederson(g: uint256[2], h: uint256[2], gx: uint256[2], hx: uint256[2], p: Proof) -> bool:
-  c: uint256 = convert(sha256(concat(
-      # unlike Chaum & Pederson we also include g and gx in the hash
-      # so we are hashing the statement as well as the commitment
-      # (see https://ia.cr/2016/771)
+def internalHash(
+      g: uint256[2], h: uint256[2],
+      gx: uint256[2], hx: uint256[2],
+      gs: uint256[2], hs: uint256[2]) -> uint256:
+  return convert(
+    sha256(concat(
       convert(g[0], bytes32), convert(g[1], bytes32),
       convert(h[0], bytes32), convert(h[1], bytes32),
       convert(gx[0], bytes32), convert(gx[1], bytes32),
@@ -118,6 +119,22 @@ def chaumPederson(g: uint256[2], h: uint256[2], gx: uint256[2], hx: uint256[2], 
       convert(p.gs[0], bytes32), convert(p.gs[1], bytes32),
       convert(p.hs[0], bytes32), convert(p.hs[1], bytes32))),
     uint256) % GROUP_ORDER
+
+@external
+@pure
+def hash(
+      g: uint256[2], h: uint256[2],
+      gx: uint256[2], hx: uint256[2],
+      gs: uint256[2], hs: uint256[2]) -> uint256:
+  return self.internalHash(g, h, gx, hx, gs, hs)
+
+@internal
+@pure
+def chaumPederson(g: uint256[2], h: uint256[2], gx: uint256[2], hx: uint256[2], p: Proof) -> bool:
+  # unlike Chaum & Pederson we also include g and gx in the hash
+  # so we are hashing the statement as well as the commitment
+  # (see https://ia.cr/2016/771)
+  c: uint256 = self.internalHash(g, h, gx, hx, p.gs, p.hs)
   gs_gxc: uint256[2] = ecadd(p.gs, ecmul(gx, c))
   hs_hxc: uint256[2] = ecadd(p.hs, ecmul(hx, c))
   g_scx: uint256[2] = ecmul(g, p.scx)
@@ -244,6 +261,12 @@ def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256):
 @view
 def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256:
   return len(self.decks[_id].cards[_cardIdx].c)
+
+@external
+@view
+def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]:
+  return self.decks[_id].cards[_cardIdx].c[
+    unsafe_sub(len(self.decks[_id].cards[_cardIdx].c), 1)]
 
 @external
 def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,

@@ -259,15 +259,45 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
 
 @internal
 def finishShuffle(_tableId: uint256):
+  self.tables[_tableId].phase = Phase_DEAL
   for cardIndex in range(26):
     if self.tables[_tableId].requirement[cardIndex] != Req_DECK:
       self.tables[_tableId].deck.drawCard(
         self.tables[_tableId].deckId,
         self.tables[_tableId].drawIndex[cardIndex],
         cardIndex)
-  self.tables[_tableId].phase = Phase_DEAL
-  self.tables[_tableId].commitBlock = block.number
-  # TODO: auto-submit decrypts for any missing or drawnTo players
+      self.autoDecrypt(_tableId, cardIndex)
+  # TODO: autoReveal
+  if self.checkRevelations(_tableId):
+    self.tables[_tableId].phase = Phase_PLAY
+  else:
+    self.tables[_tableId].commitBlock = block.number
+
+@internal
+@pure
+def emptyProof(deck: DeckManager, card: uint256[2]) -> Proof:
+  return Proof({
+    gs: empty(uint256[2]),
+    hs: empty(uint256[2]),
+    scx: deck.hash(card, card, card, card, empty(uint256[2]), empty(uint256[2]))})
+
+@internal
+def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
+  seatIndex: uint256 = unsafe_sub(
+    self.tables[_tableId].deck.decryptCount(
+      self.tables[_tableId].deckId, _cardIndex), 1)
+  for _ in range(MAX_SEATS):
+    if seatIndex == self.tables[_tableId].config.startsWith:
+      break
+    if self.tables[_tableId].stacks[seatIndex] == empty(uint256):
+      card: uint256[2] = self.tables[_tableId].deck.lastDecrypt(
+                           self.tables[_tableId].deckId, _cardIndex)
+      self.tables[_tableId].deck.decryptCard(
+        self.tables[_tableId].deckId, seatIndex, _cardIndex, card,
+        self.emptyProof(self.tables[_tableId].deck, card))
+      seatIndex = unsafe_add(seatIndex, 1)
+    else:
+      break
 
 @external
 def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
@@ -278,8 +308,9 @@ def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
   assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "decrypt not allowed"
   self.tables[_tableId].deck.decryptCard(
     self.tables[_tableId].deckId, _seatIndex, _cardIndex, _card, _proof)
-  self.tables[_tableId].commitBlock = block.number
+  self.autoDecrypt(_tableId, _cardIndex)
   # TODO: auto-submit decrypts for any missing or drawnTo players
+  self.tables[_tableId].commitBlock = block.number
 
 @external
 def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
