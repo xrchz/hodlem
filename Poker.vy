@@ -97,7 +97,7 @@ struct Config:
   prepBlocks:  uint256             # blocks to submit deck preparation
   shuffBlocks: uint256             # blocks to submit shuffle
   verifBlocks: uint256             # blocks to submit shuffle verification
-  revBlocks:   uint256             # blocks to meet a revelation requirement
+  dealBlocks:  uint256             # blocks to submit card decryptions
   actBlocks:   uint256             # blocks to act before folding can be triggered
 
 # not using Vyper enum because of this bug
@@ -213,6 +213,7 @@ def finishDeckPrep(_tableId: uint256):
       self.tables[_tableId].requirement[cardIndex] = Req_SHOW
     self.tables[_tableId].phase = Phase_SHUFFLE
     self.tables[_tableId].commitBlock = block.number
+    # TODO: auto-submit empty shuffles for any missing players
   else:
     self.tables[_tableId].challIndex = failIndex
     self.failChallenge(_tableId)
@@ -243,6 +244,7 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
   self.tables[_tableId].deck.defuseChallenge(
     self.tables[_tableId].deckId, _seatIndex, _scalars, _permutations)
   self.tables[_tableId].commitBlock = block.number
+  # TODO: auto-submit empty shuffles for any missing players
 
 @external
 def finishShuffle(_tableId: uint256):
@@ -259,6 +261,19 @@ def finishShuffle(_tableId: uint256):
         cardIndex)
   self.tables[_tableId].phase = Phase_DEAL
   self.tables[_tableId].commitBlock = block.number
+  # TODO: auto-submit decrypts for any missing or drawnTo players
+
+@external
+def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
+                _card: uint256[2], _proof: Proof):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
+  assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "decrypt not allowed"
+  self.tables[_tableId].deck.decryptCard(
+    self.tables[_tableId].deckId, _seatIndex, _cardIndex, _card, _proof)
+  self.tables[_tableId].commitBlock = block.number
+  # TODO: auto-submit decrypts for any missing or drawnTo players
 
 @internal
 def failChallenge(_tableId: uint256):
@@ -306,6 +321,18 @@ def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
            self.tables[_tableId].deckId) == unsafe_add(1, _seatIndex), "wrong player"
   assert not self.tables[_tableId].deck.challengeActive(
     self.tables[_tableId].deckId, _seatIndex), "already verified"
+  self.tables[_tableId].challIndex = _seatIndex
+  self.failChallenge(_tableId)
+
+@external
+def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
+  assert block.number > (self.tables[_tableId].commitBlock +
+                         self.tables[_tableId].config.dealBlocks), "deadline not passed"
+  assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "not required"
+  assert self.tables[_tableId].deck.decryptCount(
+    self.tables[_tableId].deckId, _cardIndex) == unsafe_add(_seatIndex, 1), "already decrypted"
   self.tables[_tableId].challIndex = _seatIndex
   self.failChallenge(_tableId)
 
@@ -357,21 +384,6 @@ def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
 #  assert self.tables[_tableId].phase == Phase_COMMIT, "wrong phase"
 #  assert self.tables[_tableId].commitments[_seatIndex] == empty(bytes32), "already committed"
 #  self.tables[_tableId].commitments[_seatIndex] = _hashed_commitment
-#
-#@external
-#def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _reveal: uint256):
-#  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-#  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-#  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-#  assert _reveal != empty(uint256), "invalid reveal"
-#  assert _reveal <= 52, "invalid reveal"
-#  assert _cardIndex < 26, "invalid cardIndex"
-#  assert self.tables[_tableId].revRequired[_seatIndex][_cardIndex] != Req_HIDE, "reveal not allowed"
-#  assert self.tables[_tableId].revelations[_seatIndex][_cardIndex] == empty(uint256), "already revealed"
-#  # TODO: the next two are unnecessary given the phase
-#  # assert self.tables[_tableId].openCommits[_seatIndex] == empty(bytes32), "previous commitment open"
-#  # assert self.tables[_tableId].commitments[_seatIndex] != empty(bytes32), "not committed"
-#  self.tables[_tableId].revelations[_seatIndex][_cardIndex] = _reveal
 #
 #@internal
 #@view

@@ -235,6 +235,11 @@ def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256):
     self.decks[_id].shuffle[len(self.decks[_id].addrs)][_cardIdx])
 
 @external
+@view
+def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256:
+  return len(self.decks[_id].cards[_cardIdx].c)
+
+@external
 def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
                 _card: uint256[2], _proof: Proof):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
