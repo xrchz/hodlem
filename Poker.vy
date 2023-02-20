@@ -69,9 +69,10 @@ def suit(card: uint256) -> uint256:
   return (card - 1) / 13
 
 # not using enum because arrays are not supported
-Req_HIDE:      constant(uint256) = 0
-Req_MAY_SHOW:  constant(uint256) = 1
-Req_MUST_SHOW: constant(uint256) = 2
+Req_DECK: constant(uint256) = 0 # not drawn
+Req_HAND: constant(uint256) = 1 # drawn to hand
+Req_MUCK: constant(uint256) = 2 # may be revealed, not required
+Req_SHOW: constant(uint256) = 3 # must be shown
 
 struct Hand:
   dealer:      uint256            # seat index of current dealer
@@ -126,9 +127,8 @@ struct Table:
   deckId:      uint256              # id of deck in deck contract
   hand:        Hand                 # current Hand
   commitBlock: uint256                # block from which new commitments were required
-  revRequired: uint256[26][MAX_SEATS] # whether a revelation is required
-  revelations: uint256[26][MAX_SEATS] # revealed cards from the shuffle
-  openCommits: bytes32[MAX_SEATS]     # unverified commitments now open to being challenged
+  drawIndex:   uint256[26]            # player the card is drawn to
+  requirement: uint256[26]            # revelation requirement level
   challIndex:  uint256                # index of a player being actively challenged
   challBlock:  uint256                # block when challenge was issued (or empty if no challenge)
 
@@ -191,11 +191,6 @@ def startGame(_tableId: uint256):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
     assert self.tables[_tableId].seats[seatIndex] != empty(uint256), "not enough players"
-    # to be used after deck preparation and shuffling
-    for cardIndex in range(MAX_SEATS):
-      if cardIndex == self.tables[_tableId].config.startsWith:
-        break
-      self.tables[_tableId].revRequired[seatIndex][cardIndex] = Req_MUST_SHOW
   self.tables[_tableId].phase = Phase_PREP
   self.tables[_tableId].commitBlock = block.number
 
@@ -212,6 +207,10 @@ def finishDeckPrep(_tableId: uint256):
   assert self.tables[_tableId].phase == Phase_PREP, "wrong phase"
   failIndex: uint256 = self.tables[_tableId].deck.finishPrep(self.tables[_tableId].deckId)
   if failIndex == self.tables[_tableId].config.startsWith:
+    for cardIndex in range(MAX_SEATS):
+      if cardIndex == failIndex: break
+      self.tables[_tableId].drawIndex[cardIndex] = cardIndex
+      self.tables[_tableId].requirement[cardIndex] = Req_SHOW
     self.tables[_tableId].phase = Phase_SHUFFLE
     self.tables[_tableId].commitBlock = block.number
   else:
@@ -252,6 +251,12 @@ def finishShuffle(_tableId: uint256):
   assert self.tables[_tableId].deck.shuffleCount(
            self.tables[_tableId].deckId) == unsafe_add(
              1, self.tables[_tableId].config.startsWith), "not enough shuffles"
+  for cardIndex in range(26):
+    if self.tables[_tableId].requirement[cardIndex] != Req_DECK:
+      self.tables[_tableId].deck.drawCard(
+        self.tables[_tableId].deckId,
+        self.tables[_tableId].drawIndex[cardIndex],
+        cardIndex)
   self.tables[_tableId].phase = Phase_DEAL
   self.tables[_tableId].commitBlock = block.number
 
