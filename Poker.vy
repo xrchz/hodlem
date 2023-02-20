@@ -196,6 +196,25 @@ def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DeckPrep):
   assert self.tables[_tableId].phase == Phase_PREP, "wrong phase"
   self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _deckPrep)
 
+@internal
+def autoShuffle(_tableId: uint256):
+  seatIndex: uint256 = unsafe_sub(self.tables[_tableId].deck.shuffleCount(
+                                    self.tables[_tableId].deckId), 1)
+  for _ in range(MAX_SEATS):
+    if seatIndex == self.tables[_tableId].config.startsWith:
+      self.finishShuffle(_tableId)
+      break
+    if self.tables[_tableId].stacks[seatIndex] == empty(uint256):
+      # just copy the shuffle: use identity permutation and secret key = 1
+      # do not challenge it; external challenges can just be ignored
+      self.tables[_tableId].deck.submitShuffle(
+        self.tables[_tableId].deckId, seatIndex,
+        self.tables[_tableId].deck.lastShuffle(self.tables[_tableId].deckId))
+      seatIndex = unsafe_add(seatIndex, 1)
+    else:
+      self.tables[_tableId].commitBlock = block.number
+      break
+
 @external
 def finishDeckPrep(_tableId: uint256):
   assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
@@ -207,8 +226,7 @@ def finishDeckPrep(_tableId: uint256):
       self.tables[_tableId].drawIndex[cardIndex] = cardIndex
       self.tables[_tableId].requirement[cardIndex] = Req_SHOW
     self.tables[_tableId].phase = Phase_SHUFFLE
-    self.tables[_tableId].commitBlock = block.number
-    # TODO: auto-submit empty shuffles for any missing players
+    self.autoShuffle(_tableId)
   else:
     self.failChallenge(_tableId, failIndex)
 
@@ -237,16 +255,10 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
   assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
   self.tables[_tableId].deck.defuseChallenge(
     self.tables[_tableId].deckId, _seatIndex, _scalars, _permutations)
-  self.tables[_tableId].commitBlock = block.number
-  # TODO: auto-submit empty shuffles for any missing players
+  self.autoShuffle(_tableId)
 
-@external
+@internal
 def finishShuffle(_tableId: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
-  assert self.tables[_tableId].deck.shuffleCount(
-           self.tables[_tableId].deckId) == unsafe_add(
-             1, self.tables[_tableId].config.startsWith), "not enough shuffles"
   for cardIndex in range(26):
     if self.tables[_tableId].requirement[cardIndex] != Req_DECK:
       self.tables[_tableId].deck.drawCard(

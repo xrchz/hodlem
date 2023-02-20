@@ -165,6 +165,11 @@ def shuffleCount(_id: uint256) -> uint256:
   return len(self.decks[_id].shuffle)
 
 @external
+@view
+def lastShuffle(_id: uint256) -> DynArray[uint256[2], 16384]:
+  return self.decks[_id].shuffle[unsafe_sub(len(self.decks[_id].shuffle), 1)]
+
+@external
 def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 16384]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].shuffle) == unsafe_add(_playerIdx, 1), "wrong player"
