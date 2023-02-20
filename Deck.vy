@@ -272,3 +272,8 @@ def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
     self.decks[_id].cards[_cardIdx].c[len(self.decks[_id].addrs)],
     _proof), "verification failed"
   self.decks[_id].cards[_cardIdx].opensAs = unsafe_add(_openIdx, 1)
+
+@external
+@view
+def openedCard(_id: uint256, _cardIdx: uint256) -> uint256:
+  return self.decks[_id].cards[_cardIdx].opensAs
