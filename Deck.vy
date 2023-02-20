@@ -159,6 +159,11 @@ def finishPrep(_id: uint256) -> uint256:
   return numPlayers
 
 @external
+@view
+def shuffleCount(_id: uint256) -> uint256:
+  return len(self.decks[_id].shuffle)
+
+@external
 def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 16384]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].shuffle) == unsafe_add(_playerIdx, 1), "wrong player"
@@ -177,6 +182,11 @@ def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256):
 @view
 def challengeActive(_id: uint256, _playerIdx: uint256) -> bool:
   return self.decks[_id].challengeReq[_playerIdx] != 0
+
+@external
+@view
+def challengeRnd(_id: uint256, _playerIdx: uint256) -> uint256:
+  return self.decks[_id].challengeRnd
 
 @external
 def respondChallenge(_id: uint256, _playerIdx: uint256,

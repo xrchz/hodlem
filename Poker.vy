@@ -3,6 +3,7 @@
 
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
 MAX_SIZE: constant(uint256) = 16384
+MAX_SECURITY: constant(uint256) = 256
 
 struct Proof:
   # signature to confirm log_g(gx) = log_h(hx)
@@ -25,6 +26,7 @@ struct DeckPrep:
 import Deck as DeckManager
 
 # TODO: add rake (rewards tabs for progress txns)?
+# TODO: add penalties (instead of full abort on failure)?
 
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament structure
@@ -84,15 +86,16 @@ struct Hand:
   pot:         uint256            # pot for the hand (from previous rounds)
 
 struct Config:
-  deckAddr:    address             # address of Deck contract
   buyIn:       uint256             # entry ticket price per player
   bond:        uint256             # liveness bond for each player
   startsWith:  uint256             # game can start when this many players are seated
   untilLeft:   uint256             # game ends when this many players are left
   structure:   uint256[MAX_LEVELS] # small blind levels (right-padded with blanks)
   levelBlocks: uint256             # blocks between levels
-  proveBlocks: uint256             # blocks to respond to a challenge
-  dealBlocks:  uint256             # blocks to commit to a shuffle or submit deck preparation
+  verifRounds: uint256             # number of shuffle verifications required
+  prepBlocks:  uint256             # blocks to submit deck preparation
+  shuffBlocks: uint256             # blocks to submit shuffle
+  verifBlocks: uint256             # blocks to submit shuffle verification
   revBlocks:   uint256             # blocks to meet a revelation requirement
   actBlocks:   uint256             # blocks to act before folding can be triggered
 
@@ -101,21 +104,14 @@ struct Config:
 #enum Phase:
 #  JOIN       # before the game has started, taking seats
 #  PREP       # all players seated, preparing the deck
-#  COMMIT     # players can make commitments, and prove or challenge previous commitments
-#               # commitments starts empty, and can increase
-#               # openCommits, revelations, and revRequired start possibly non-empty
-#               # openCommits are cleared; their revelations and revRequireds stay stale
-#               # proofs can come in
-#               # when all new commitments are in, this phase can be ended and the above cleared
-#  PLAY       # new commitments in, challenges closed, players can reveal cards and play
-#               # commitments and revRequired start non-empty, openCommits stays empty
-#               # revRequired can increase
-#               # revelations come in when needed
-#               # proofs stay empty
-Phase_JOIN:   constant(uint256) = 0
-Phase_PREP:   constant(uint256) = 1
-Phase_COMMIT: constant(uint256) = 2
-Phase_PLAY:   constant(uint256) = 3
+#  SHUFFLE    # submitting shuffles and verifications in order
+#  DEAL       # drawing and possibly opening cards as currently required
+#  PLAY       # betting; new card revelations may become required
+Phase_JOIN:    constant(uint256) = 0
+Phase_PREP:    constant(uint256) = 1
+Phase_SHUFFLE: constant(uint256) = 2
+Phase_DEAL:    constant(uint256) = 3
+Phase_PLAY:    constant(uint256) = 4
 
 nextTableId: public(uint256)
 
@@ -145,7 +141,7 @@ def __init__():
 
 @external
 @payable
-def createTable(_playerId: uint256, _seatIndex: uint256, _config: Config) -> uint256:
+def createTable(_playerId: uint256, _seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
   assert 1 < _config.startsWith, "invalid startsWith"
   assert _config.startsWith <= MAX_SEATS, "invalid startsWith"
@@ -157,6 +153,8 @@ def createTable(_playerId: uint256, _seatIndex: uint256, _config: Config) -> uin
   assert msg.value == _config.bond + _config.buyIn, "incorrect bond + buyIn"
   tableId: uint256 = self.nextTableId
   self.tables[tableId].tableId = tableId
+  self.tables[tableId].deck = DeckManager(_deckAddr)
+  self.tables[tableId].deckId = self.tables[tableId].deck.newDeck(52, _config.startsWith)
   self.tables[tableId].phase = Phase_JOIN
   self.tables[tableId].config = _config
   self.tables[tableId].seats[_seatIndex] = _playerId
@@ -193,15 +191,13 @@ def startGame(_tableId: uint256):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
     assert self.tables[_tableId].seats[seatIndex] != empty(uint256), "not enough players"
+    # to be used after deck preparation and shuffling
     for cardIndex in range(MAX_SEATS):
       if cardIndex == self.tables[_tableId].config.startsWith:
         break
       self.tables[_tableId].revRequired[seatIndex][cardIndex] = Req_MUST_SHOW
-  self.tables[_tableId].commitBlock = block.number
   self.tables[_tableId].phase = Phase_PREP
-  self.tables[_tableId].deck = DeckManager(self.tables[_tableId].config.deckAddr)
-  self.tables[_tableId].deckId = self.tables[_tableId].deck.newDeck(
-    52, self.tables[_tableId].config.startsWith)
+  self.tables[_tableId].commitBlock = block.number
 
 @external
 def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DeckPrep):
@@ -216,11 +212,97 @@ def finishDeckPrep(_tableId: uint256):
   assert self.tables[_tableId].phase == Phase_PREP, "wrong phase"
   failIndex: uint256 = self.tables[_tableId].deck.finishPrep(self.tables[_tableId].deckId)
   if failIndex == self.tables[_tableId].config.startsWith:
+    self.tables[_tableId].phase = Phase_SHUFFLE
     self.tables[_tableId].commitBlock = block.number
-    self.tables[_tableId].phase = Phase_COMMIT
   else:
     self.tables[_tableId].challIndex = failIndex
     self.failChallenge(_tableId)
+
+@external
+def submitShuffle(_tableId: uint256, _seatIndex: uint256,
+                  _shuffle: DynArray[uint256[2], MAX_SIZE],
+                  _commitment: DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY]) -> uint256:
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
+  self.tables[_tableId].deck.submitShuffle(self.tables[_tableId].deckId, _seatIndex, _shuffle)
+  self.tables[_tableId].deck.challenge(
+    self.tables[_tableId].deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
+  self.tables[_tableId].deck.respondChallenge(
+    self.tables[_tableId].deckId, _seatIndex, _commitment)
+  self.tables[_tableId].commitBlock = block.number
+  return self.tables[_tableId].deck.challengeRnd(
+    self.tables[_tableId].deckId, _seatIndex)
+
+@external
+def submitVerif(_tableId: uint256, _seatIndex: uint256,
+                _scalars: DynArray[uint256, MAX_SECURITY],
+                _permutations: DynArray[DynArray[uint256, MAX_SIZE], MAX_SECURITY]):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
+  self.tables[_tableId].deck.defuseChallenge(
+    self.tables[_tableId].deckId, _seatIndex, _scalars, _permutations)
+  self.tables[_tableId].commitBlock = block.number
+
+@external
+def finishShuffle(_tableId: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
+  assert self.tables[_tableId].deck.shuffleCount(
+           self.tables[_tableId].deckId) == unsafe_add(
+             1, self.tables[_tableId].config.startsWith), "not enough shuffles"
+  self.tables[_tableId].phase = Phase_DEAL
+  self.tables[_tableId].commitBlock = block.number
+
+@internal
+def failChallenge(_tableId: uint256):
+  challIndex: uint256 = self.tables[_tableId].challIndex
+  perPlayer: uint256 = self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn
+  # burn the offender's bond + buyIn
+  send(empty(address), perPlayer)
+  self.tables[_tableId].seats[challIndex] = empty(uint256)
+  # refund the others' bonds and buyIns
+  for playerId in self.tables[_tableId].seats:
+    if playerId != empty(uint256):
+      send(self.playerAddress[playerId], perPlayer)
+  # delete the game
+  self.tables[_tableId] = empty(Table)
+
+@external
+def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_PREP, "wrong phase"
+  assert block.number > (self.tables[_tableId].commitBlock +
+                         self.tables[_tableId].config.prepBlocks), "deadline not passed"
+  assert not self.tables[_tableId].deck.hasSubmittedPrep(
+    self.tables[_tableId].deckId, _seatIndex), "already submitted"
+  self.tables[_tableId].challIndex = _seatIndex
+  self.failChallenge(_tableId)
+
+@external
+def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
+  assert block.number > (self.tables[_tableId].commitBlock +
+                         self.tables[_tableId].config.shuffBlocks), "deadline not passed"
+  assert self.tables[_tableId].deck.shuffleCount(
+           self.tables[_tableId].deckId) == _seatIndex, "wrong player"
+  self.tables[_tableId].challIndex = _seatIndex
+  self.failChallenge(_tableId)
+
+@external
+def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
+  assert block.number > (self.tables[_tableId].commitBlock +
+                         self.tables[_tableId].config.verifBlocks), "deadline not passed"
+  assert self.tables[_tableId].deck.shuffleCount(
+           self.tables[_tableId].deckId) == unsafe_add(1, _seatIndex), "wrong player"
+  assert not self.tables[_tableId].deck.challengeActive(
+    self.tables[_tableId].deckId, _seatIndex), "already verified"
+  self.tables[_tableId].challIndex = _seatIndex
+  self.failChallenge(_tableId)
 
 #@internal
 #@view
@@ -329,20 +411,6 @@ def finishDeckPrep(_tableId: uint256):
 #    used &= ~shift(1, convert(card - 1, int128))
 #  return used == 0
 
-@internal
-def failChallenge(_tableId: uint256):
-  challIndex: uint256 = self.tables[_tableId].challIndex
-  perPlayer: uint256 = self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn
-  # burn the offender's bond + buyIn
-  send(empty(address), perPlayer)
-  self.tables[_tableId].seats[challIndex] = empty(uint256)
-  # refund the others' bonds and buyIns
-  for playerId in self.tables[_tableId].seats:
-    if playerId != empty(uint256):
-      send(self.playerAddress[playerId], perPlayer)
-  # delete the game
-  self.tables[_tableId] = empty(Table)
-
 #@internal
 #def verifyChallenge(_tableId: uint256):
 #  if self.checkProof(_tableId):
@@ -372,17 +440,6 @@ def failChallenge(_tableId: uint256):
 #  self.tables[_tableId].challIndex = _seatIndex
 #  if self.tables[_tableId].proofs[_seatIndex].proof != empty(Bytes[52]):
 #    self.verifyChallenge(_tableId)
-
-@external
-def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_PREP, "wrong phase"
-  assert block.number > (self.tables[_tableId].commitBlock +
-                         self.tables[_tableId].config.dealBlocks), "deadline not passed"
-  assert not self.tables[_tableId].deck.hasSubmittedPrep(
-    self.tables[_tableId].deckId, _seatIndex), "already submitted"
-  self.tables[_tableId].challIndex = _seatIndex
-  self.failChallenge(_tableId)
 
 #@external
 #def commitTimeout(_tableId: uint256, _seatIndex: uint256):
