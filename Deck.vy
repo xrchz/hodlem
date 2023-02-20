@@ -179,7 +179,7 @@ def finishPrep(_id: uint256) -> uint256:
 @external
 @view
 def shuffleCount(_id: uint256) -> uint256:
-  return len(self.decks[_id].shuffle)
+  return unsafe_sub(len(self.decks[_id].shuffle), 1)
 
 @external
 @view
@@ -260,7 +260,7 @@ def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256):
 @external
 @view
 def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256:
-  return len(self.decks[_id].cards[_cardIdx].c)
+  return unsafe_sub(len(self.decks[_id].cards[_cardIdx].c), 1)
 
 @external
 @view
