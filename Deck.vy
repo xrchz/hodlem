@@ -116,8 +116,8 @@ def internalHash(
       convert(h[0], bytes32), convert(h[1], bytes32),
       convert(gx[0], bytes32), convert(gx[1], bytes32),
       convert(hx[0], bytes32), convert(hx[1], bytes32),
-      convert(p.gs[0], bytes32), convert(p.gs[1], bytes32),
-      convert(p.hs[0], bytes32), convert(p.hs[1], bytes32))),
+      convert(gs[0], bytes32), convert(gs[1], bytes32),
+      convert(hs[0], bytes32), convert(hs[1], bytes32))),
     uint256) % GROUP_ORDER
 
 @external
