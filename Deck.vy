@@ -50,13 +50,14 @@ struct DrawCard:
 struct Deck:
   # authorised address for each player
   addrs: DynArray[address, 16385]
-  # shuffle[0] is the unencrypted cards
+  # shuffle[0] is the unencrypted cards (including base card at index 0)
   # shuffle[j+1] is the shuffled encrypted cards from player index j
   shuffle: DynArray[DynArray[uint256[2], 16384], 16386] # 16385 + 1] <- another Vyper bug with importing
   challengeReq: DynArray[uint256, 16385]
   challengeRes: DynArray[DynArray[DynArray[uint256[2], 16384], 256], 16385]
   challengeRnd: uint256
   # for decrypting shuffled cards
+  # note: cards[i] corresponds to shuffle[_][i+1]
   cards: DynArray[DrawCard, 16384]
   # data for deck preparation
   prep: DynArray[DeckPrep, 16385]
@@ -67,7 +68,7 @@ nextId: public(uint256)
 @external
 def newDeck(_size: uint256, _players: uint256) -> uint256:
   assert 0 < _size, "invalid size"
-  assert _size <= MAX_SIZE, "invalid size"
+  assert _size < MAX_SIZE, "invalid size"
   assert 0 < _players, "invalid players"
   assert _players <= MAX_PLAYERS, "invalid players"
   id: uint256 = self.nextId
@@ -77,7 +78,7 @@ def newDeck(_size: uint256, _players: uint256) -> uint256:
     self.decks[id].addrs.append(msg.sender)
     self.decks[id].prep.append(empty(DeckPrep))
   self.decks[id].shuffle.append([])
-  for i in range(MAX_SIZE + 1):
+  for i in range(MAX_SIZE):
     self.decks[id].shuffle[0].append(empty(uint256[2]))
     if i == _size:
       break
@@ -230,9 +231,9 @@ def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256):
   # TODO: who should be authorised for this? anybody? dealer? player? dealer-per-player?
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert self.decks[_id].cards[_cardIdx].drawnTo == 0, "already drawn"
-  self.decks[_id].cards[_cardIdx].drawnTo = 1 + _playerIdx
+  self.decks[_id].cards[_cardIdx].drawnTo = unsafe_add(_playerIdx, 1)
   self.decks[_id].cards[_cardIdx].c.append(
-    self.decks[_id].shuffle[len(self.decks[_id].addrs)][_cardIdx])
+    self.decks[_id].shuffle[len(self.decks[_id].addrs)][unsafe_add(_cardIdx, 1)])
 
 @external
 @view
