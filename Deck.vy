@@ -48,6 +48,8 @@ struct DrawCard:
   opensAs: uint256
 
 struct Deck:
+  # authorised address for drawing cards and reshuffling
+  dealer: address
   # authorised address for each player
   addrs: DynArray[address, 16385]
   # shuffle[0] is the unencrypted cards (including base card at index 0)
@@ -72,6 +74,7 @@ def newDeck(_size: uint256, _players: uint256) -> uint256:
   assert 0 < _players, "invalid players"
   assert _players <= MAX_PLAYERS, "invalid players"
   id: uint256 = self.nextId
+  self.decks[id].dealer = msg.sender
   for i in range(MAX_PLAYERS):
     if i == _players:
       break
@@ -84,6 +87,11 @@ def newDeck(_size: uint256, _players: uint256) -> uint256:
       break
   self.nextId = unsafe_add(id, 1)
   return id
+
+@external
+def changeDealer(_id: uint256, _newAddress: address):
+  assert self.decks[_id].dealer == msg.sender, "unauthorised"
+  self.decks[_id].dealer = _newAddress
 
 @external
 def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address):
@@ -193,6 +201,7 @@ def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[
   assert len(self.decks[_id].shuffle[0]) == len(_shuffle), "wrong length"
   self.decks[_id].shuffle.append(_shuffle)
   self.decks[_id].challengeReq.append(0)
+  self.decks[_id].challengeRes.append([])
 
 @external
 def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256):
@@ -250,8 +259,7 @@ def defuseChallenge(_id: uint256, _playerIdx: uint256,
 
 @external
 def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256):
-  # TODO: who should be authorised for this? anybody? dealer? player? dealer-per-player?
-  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
+  assert self.decks[_id].dealer == msg.sender, "unauthorised"
   assert self.decks[_id].cards[_cardIdx].drawnTo == 0, "already drawn"
   self.decks[_id].cards[_cardIdx].drawnTo = unsafe_add(_playerIdx, 1)
   self.decks[_id].cards[_cardIdx].c.append(
@@ -306,3 +314,14 @@ def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
 @view
 def openedCard(_id: uint256, _cardIdx: uint256) -> uint256:
   return self.decks[_id].cards[_cardIdx].opensAs
+
+@external
+def resetShuffle(_id: uint256):
+  assert self.decks[_id].dealer == msg.sender, "unauthorised"
+  self.decks[_id].shuffle = [self.decks[_id].shuffle[0]]
+  self.decks[_id].challengeReq = empty(DynArray[uint256, MAX_PLAYERS])
+  self.decks[_id].challengeRes = empty(
+    DynArray[DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY], MAX_PLAYERS])
+  for cardIdx in range(MAX_SIZE):
+    if cardIdx == len(self.decks[_id].shuffle[0]): break
+    self.decks[_id].cards[cardIdx] = empty(DrawCard)
