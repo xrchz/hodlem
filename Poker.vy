@@ -435,6 +435,19 @@ def callBet(_tableId: uint256, _seatIndex: uint256):
   self.actNext(_tableId, _seatIndex)
 
 @external
+def bet(_tableId: uint256, _seatIndex: uint256, _size: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
+  assert self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex] == 0, "call/raise required"
+  assert _size <= self.tables[_tableId].stacks[_seatIndex], "size exceeds stack"
+  self.placeBet(_tableId, _seatIndex, _size)
+  self.tables[_tableId].hand.betIndex = _seatIndex
+  self.actNext(_tableId, _seatIndex)
+
+@external
 def startRound(_tableId: uint256):
   assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
