@@ -81,6 +81,7 @@ struct Hand:
   live:        bool[MAX_SEATS]    # whether this player has a live hand
   betIndex:    uint256            # seat index of player who introduced the current bet
   actionIndex: uint256            # seat index of currently active player
+  actionBlock: uint256            # block from which action was on the active player
   pot:         uint256            # pot for the hand (from previous rounds)
 
 struct Config:
@@ -345,7 +346,8 @@ def selectDealer(_tableId: uint256):
   highestCard: uint256 = empty(uint256)
   highestCardSeatIndex: uint256 = empty(uint256)
   seatIndex: uint256 = 0
-  for playerId in self.tables[_tableId].seats:
+  for _ in self.tables[_tableId].seats:
+    self.tables[_tableId].hand.live[seatIndex] = True
     card: uint256 = self.tables[_tableId].deck.openedCard(
       self.tables[_tableId].deckId, seatIndex)
     rankCard: uint256 = self.rank(card)
@@ -357,16 +359,16 @@ def selectDealer(_tableId: uint256):
     seatIndex += 1
   self.tables[_tableId].hand.dealer = highestCardSeatIndex
   self.tables[_tableId].startBlock = block.number
-  # TODO: clear/reset deck for reshuffle
+  self.tables[_tableId].deck.resetShuffle(self.tables[_tableId].deckId)
   self.tables[_tableId].phase = Phase_SHUFFLE
+  self.tables[_tableId].commitBlock = block.number
 
 @external
 def dealHoleCards(_tableId: uint256):
   assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
   assert self.tables[_tableId].startBlock != empty(uint256), "not started"
-  self.tables[_tableId].hand.live = empty(bool[MAX_SEATS])
-  self.tables[_tableId].hand.deckIndex = 0
+  assert self.tables[_tableId].hand.deckIndex == 0, "already dealt"
   seatIndex: uint256 = self.tables[_tableId].hand.dealer
   for __ in range(2):
     for _ in range(MAX_SEATS):
@@ -377,12 +379,28 @@ def dealHoleCards(_tableId: uint256):
         self.tables[_tableId].deckId,
         seatIndex,
         self.tables[_tableId].hand.deckIndex)
-      self.tables[_tableId].hand.live[seatIndex] = True
       self.tables[_tableId].hand.deckIndex += 1
       if seatIndex == self.tables[_tableId].hand.dealer:
         break
   self.tables[_tableId].phase = Phase_DEAL
   self.tables[_tableId].commitBlock = block.number
+
+@external
+def postBlinds(_tableId: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
+  assert self.tables[_tableId].hand.board[0] == empty(uint256), "board not empty"
+  assert self.tables[_tableId].hand.actionBlock == empty(uint256), "already betting"
+  seatIndex: uint256 = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
+  smallBlind: uint256 = self.smallBlind(_tableId)
+  self.placeBet(_tableId, seatIndex, smallBlind)
+  seatIndex = self.nextPlayer(_tableId, seatIndex)
+  self.placeBet(_tableId, seatIndex, smallBlind + smallBlind)
+  seatIndex = self.nextPlayer(_tableId, seatIndex)
+  self.tables[_tableId].hand.actionIndex = seatIndex
+  self.tables[_tableId].hand.betIndex = seatIndex
+  self.tables[_tableId].hand.actionBlock = block.number
 
 @internal
 def failChallenge(_tableId: uint256, _challIndex: uint256):
@@ -452,6 +470,46 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
     self.tables[_tableId].deckId, _cardIndex) == 0, "already opened"
   self.failChallenge(_tableId, _seatIndex)
 
+@external
+def actTimeout(_tableId: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert block.number > (self.tables[_tableId].hand.actionBlock +
+                         self.tables[_tableId].config.actBlocks), "deadline not passed"
+  self.foldNext(_tableId, self.tables[_tableId].hand.actionIndex)
+
+@internal
+def foldNext(_tableId: uint256, _seatIndex: uint256):
+  self.tables[_tableId].hand.live[_seatIndex] = False
+  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
+  if self.tables[_tableId].hand.actionIndex == self.nextPlayer(
+       _tableId, self.tables[_tableId].hand.actionIndex):
+    # actionIndex wins the round as last player standing
+    # give the winner the pot
+    self.tables[_tableId].stacks[
+      self.tables[_tableId].hand.actionIndex] += self.tables[_tableId].hand.pot
+    self.tables[_tableId].hand.pot = 0
+    # (eliminate any all-in players -- impossible as only winner left standing)
+    # (check if untilLeft is reached -- impossible as nobody was eliminated)
+    # progress the dealer
+    for seatIndex in range(MAX_SEATS):
+      if seatIndex == self.tables[_tableId].config.startsWith:
+        break
+      self.tables[_tableId].hand.live[seatIndex] = self.tables[_tableId].stacks[seatIndex] > 0
+    self.tables[_tableId].hand.dealer = self.nextPlayer(
+      _tableId, self.tables[_tableId].hand.dealer)
+    self.tables[_tableId].hand.actionBlock = empty(uint256)
+    # clear board and reshuffle
+    self.tables[_tableId].hand.board = empty(uint256[5])
+    self.tables[_tableId].requirement = empty(uint256[26])
+    self.tables[_tableId].hand.deckIndex = 0
+    self.tables[_tableId].deck.resetShuffle(self.tables[_tableId].deckId)
+    self.tables[_tableId].phase = Phase_SHUFFLE
+    self.autoShuffle(_tableId)
+  else:
+    self.tables[_tableId].hand.actionBlock = block.number
+
 @internal
 @view
 def nextPlayer(_tableId: uint256, _seatIndex: uint256) -> uint256:
@@ -469,49 +527,30 @@ def nextPlayer(_tableId: uint256, _seatIndex: uint256) -> uint256:
       return nextIndex
   raise "no live players"
 
-#@internal
-#@view
-#def smallBlind(_tableId: uint256) -> uint256:
-#  level: uint256 = empty(uint256)
-#  if (self.tables[_tableId].startBlock +
-#      MAX_LEVELS * self.tables[_tableId].config.levelBlocks <
-#      block.number):
-#    level = ((block.number - self.tables[_tableId].startBlock) /
-#             self.tables[_tableId].config.levelBlocks)
-#  else:
-#    level = MAX_LEVELS - 1
-#  for _ in range(MAX_LEVELS):
-#    if self.tables[_tableId].config.structure[level] == empty(uint256):
-#      level -= 1
-#    else:
-#      break
-#  return self.tables[_tableId].config.structure[level]
-#
-#@internal
-#def placeBet(_tableId: uint256, _seatIndex: uint256, _size: uint256):
-#  amount: uint256 = min(_size, self.tables[_tableId].stacks[_seatIndex])
-#  self.tables[_tableId].stacks[_seatIndex] -= amount
-#  self.tables[_tableId].hand.bet[_seatIndex] += amount
-#
-#@external
-#def postBlinds(_tableId: uint256):
-#  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-#  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-#  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
-#  assert self.tables[_tableId].hand.board[0] == empty(uint256), "board not empty"
-#  assert self.tables[_tableId].hand.actionBlock == empty(uint256), "already betting"
-#  assert self.checkRevelations(_tableId), "required revelations missing"
-#  seatIndex: uint256 = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
-#  smallBlind: uint256 = self.smallBlind(_tableId)
-#  self.placeBet(_tableId, seatIndex, smallBlind)
-#  seatIndex = self.nextPlayer(_tableId, seatIndex)
-#  self.placeBet(_tableId, seatIndex, smallBlind + smallBlind)
-#  seatIndex = self.nextPlayer(_tableId, seatIndex)
-#  self.tables[_tableId].hand.revealBlock = empty(uint256)
-#  self.tables[_tableId].hand.actionIndex = seatIndex
-#  self.tables[_tableId].hand.betIndex = seatIndex
-#  self.tables[_tableId].hand.actionBlock = block.number
-#
+@internal
+@view
+def smallBlind(_tableId: uint256) -> uint256:
+  level: uint256 = empty(uint256)
+  if (self.tables[_tableId].startBlock +
+      MAX_LEVELS * self.tables[_tableId].config.levelBlocks <
+      block.number):
+    level = ((block.number - self.tables[_tableId].startBlock) /
+             self.tables[_tableId].config.levelBlocks)
+  else:
+    level = MAX_LEVELS - 1
+  for _ in range(MAX_LEVELS):
+    if self.tables[_tableId].config.structure[level] == empty(uint256):
+      level -= 1
+    else:
+      break
+  return self.tables[_tableId].config.structure[level]
+
+@internal
+def placeBet(_tableId: uint256, _seatIndex: uint256, _size: uint256):
+  amount: uint256 = min(_size, self.tables[_tableId].stacks[_seatIndex])
+  self.tables[_tableId].stacks[_seatIndex] -= amount
+  self.tables[_tableId].hand.bet[_seatIndex] += amount
+
 #@external
 #def startRound(_tableId: uint256):
 #  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
@@ -536,31 +575,6 @@ def nextPlayer(_tableId: uint256, _seatIndex: uint256) -> uint256:
 #  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
 #  self.tables[_tableId].hand.betIndex = self.tables[_tableId].hand.actionIndex
 #  self.tables[_tableId].hand.actionBlock = block.number
-#
-#@internal
-#def foldNext(_tableId: uint256, _seatIndex: uint256):
-#  self.tables[_tableId].hand.live[_seatIndex] = False
-#  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
-#  if self.tables[_tableId].hand.actionIndex == self.nextPlayer(_tableId, self.tables[_tableId].hand.actionIndex):
-#    # actionIndex wins the round as last player standing
-#    # give the winner the pot
-#    self.tables[_tableId].stacks[self.tables[_tableId].hand.actionIndex] += self.tables[_tableId].hand.pot
-#    self.tables[_tableId].hand.pot = 0
-#    # (eliminate any all-in players -- impossible as only winner left standing)
-#    # (check if untilLeft is reached -- impossible as nobody was eliminated)
-#    # progress the dealer
-#    for seatIndex in range(MAX_SEATS):
-#      if seatIndex == self.tables[_tableId].config.startsWith:
-#        break
-#      self.tables[_tableId].hand.live[seatIndex] = self.tables[_tableId].stacks[seatIndex] > 0
-#    self.tables[_tableId].hand.dealer = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
-#    # reshuffle: enter commit phase for next hand
-#    self.tables[_tableId].openCommits = self.tables[_tableId].commitments
-#    self.tables[_tableId].commitments = empty(bytes32[MAX_SEATS])
-#    self.tables[_tableId].commitBlock = block.number
-#    self.tables[_tableId].phase = Phase_COMMIT
-#  else:
-#    self.tables[_tableId].hand.actionBlock = block.number
 #
 #@internal
 #def actNext(_tableId: uint256, _seatIndex: uint256):
@@ -608,16 +622,6 @@ def nextPlayer(_tableId: uint256, _seatIndex: uint256) -> uint256:
 #  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
 #  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
 #  self.foldNext(_tableId, _seatIndex)
-#
-#@external
-#def actTimeout(_tableId: uint256):
-#  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-#  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-#  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
-#  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
-#  assert block.number > (self.tables[_tableId].hand.actionBlock +
-#                         self.tables[_tableId].config.actBlocks), "deadline not passed"
-#  self.foldNext(_tableId, self.tables[_tableId].hand.actionIndex)
 #
 #@external
 #def check(_tableId: uint256, _seatIndex: uint256):
