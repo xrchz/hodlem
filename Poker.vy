@@ -1,5 +1,5 @@
 # @version ^0.3.7
-# no-limit hold'em sit-n-go tournament contract
+# no-limit hold'em sit-n-go single-table tournaments
 
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
 MAX_SIZE: constant(uint256) = 16384
@@ -78,6 +78,7 @@ struct Hand:
   deckIndex:   uint256            # index of next card in deck
   board:       uint256[5]         # board cards
   bet:         uint256[MAX_SEATS] # current round bet of each player
+  lastBet:     uint256            # size of last bet or raise
   live:        bool[MAX_SEATS]    # whether this player has a live hand
   betIndex:    uint256            # seat index of player who introduced the current bet
   actionIndex: uint256            # seat index of currently active player
@@ -394,13 +395,15 @@ def postBlinds(_tableId: uint256):
   assert self.tables[_tableId].hand.board[0] == empty(uint256), "board not empty"
   assert self.tables[_tableId].hand.actionBlock == empty(uint256), "already betting"
   seatIndex: uint256 = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
-  smallBlind: uint256 = self.smallBlind(_tableId)
-  self.placeBet(_tableId, seatIndex, smallBlind)
+  blind: uint256 = self.smallBlind(_tableId)
+  self.placeBet(_tableId, seatIndex, blind)
   seatIndex = self.nextPlayer(_tableId, seatIndex)
-  self.placeBet(_tableId, seatIndex, smallBlind + smallBlind)
+  blind = unsafe_add(blind, blind)
+  self.placeBet(_tableId, seatIndex, blind)
   seatIndex = self.nextPlayer(_tableId, seatIndex)
-  self.tables[_tableId].hand.actionIndex = seatIndex
   self.tables[_tableId].hand.betIndex = seatIndex
+  self.tables[_tableId].hand.lastBet = blind
+  self.tables[_tableId].hand.actionIndex = seatIndex
   self.tables[_tableId].hand.actionBlock = block.number
 
 @external
@@ -445,6 +448,22 @@ def bet(_tableId: uint256, _seatIndex: uint256, _size: uint256):
   assert _size <= self.tables[_tableId].stacks[_seatIndex], "size exceeds stack"
   self.placeBet(_tableId, _seatIndex, _size)
   self.tables[_tableId].hand.betIndex = _seatIndex
+  self.tables[_tableId].hand.lastBet = _size
+  self.actNext(_tableId, _seatIndex)
+
+@external
+def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseBy: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
+  assert self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex] > 0, "no bet"
+  assert _raiseBy <= self.tables[_tableId].stacks[_seatIndex], "size exceeds stack"
+  assert _raiseBy >= self.tables[_tableId].hand.lastBet, "size below minimum"
+  self.placeBet(_tableId, _seatIndex, _raiseBy)
+  self.tables[_tableId].hand.betIndex = _seatIndex
+  self.tables[_tableId].hand.lastBet = _raiseBy
   self.actNext(_tableId, _seatIndex)
 
 @external
@@ -624,6 +643,7 @@ def actNext(_tableId: uint256, _seatIndex: uint256):
     self.tables[_tableId].phase = Phase_DEAL
     self.tables[_tableId].commitBlock = block.number
   else:
+    # TODO: handle next player being all-in
     self.tables[_tableId].hand.actionBlock = block.number
 
 @internal
