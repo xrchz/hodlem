@@ -423,6 +423,18 @@ def check(_tableId: uint256, _seatIndex: uint256):
   self.actNext(_tableId, _seatIndex)
 
 @external
+def callBet(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
+  assert self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex] > 0, "no bet"
+  self.placeBet(_tableId, _seatIndex, self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex])
+  self.actNext(_tableId, _seatIndex)
+
+@external
 def startRound(_tableId: uint256):
   assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
@@ -640,15 +652,3 @@ def placeBet(_tableId: uint256, _seatIndex: uint256, _size: uint256):
   amount: uint256 = min(_size, self.tables[_tableId].stacks[_seatIndex])
   self.tables[_tableId].stacks[_seatIndex] -= amount
   self.tables[_tableId].hand.bet[_seatIndex] += amount
-
-#@external
-#def callBet(_tableId: uint256, _seatIndex: uint256):
-#  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-#  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-#  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-#  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
-#  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
-#  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
-#  assert self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex] > 0, "no bet"
-#  self.placeBet(_tableId, _seatIndex, self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex])
-#  self.actNext(_tableId, _seatIndex)
