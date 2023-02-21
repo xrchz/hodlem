@@ -284,7 +284,8 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
   for _ in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
-    if self.tables[_tableId].stacks[seatIndex] == empty(uint256):
+    if (self.tables[_tableId].stacks[seatIndex] == empty(uint256) and
+        not self.tables[_tableId].hand.live[seatIndex]):
       card: uint256[2] = self.tables[_tableId].deck.lastDecrypt(
                            self.tables[_tableId].deckId, _cardIndex)
       self.tables[_tableId].deck.decryptCard(
@@ -402,6 +403,48 @@ def postBlinds(_tableId: uint256):
   self.tables[_tableId].hand.betIndex = seatIndex
   self.tables[_tableId].hand.actionBlock = block.number
 
+@external
+def fold(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
+  self.foldNext(_tableId, _seatIndex)
+
+@external
+def check(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
+  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
+  assert self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex] == 0, "bet required"
+  self.actNext(_tableId, _seatIndex)
+
+@external
+def startRound(_tableId: uint256):
+  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
+  assert self.tables[_tableId].hand.board[2] != empty(uint256), "board empty"
+  assert self.tables[_tableId].hand.actionBlock == empty(uint256), "already betting"
+  # fill the board with the revealedCards
+  boardIndex: uint256 = 5
+  cardIndex: uint256 = self.tables[_tableId].hand.deckIndex
+  for _ in range(5):
+    boardIndex -= 1
+    if self.tables[_tableId].hand.board[boardIndex] == empty(uint256):
+      continue
+    elif self.tables[_tableId].hand.board[boardIndex] == PENDING_REVEAL:
+      cardIndex -= 1
+      self.tables[_tableId].hand.board[boardIndex] = self.tables[_tableId].deck.openedCard(
+        self.tables[_tableId].deckId, cardIndex)
+    else:
+      break
+  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
+  self.tables[_tableId].hand.betIndex = self.tables[_tableId].hand.actionIndex
+  self.tables[_tableId].hand.actionBlock = block.number
+
 @internal
 def failChallenge(_tableId: uint256, _challIndex: uint256):
   perPlayer: uint256 = self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn
@@ -499,8 +542,8 @@ def foldNext(_tableId: uint256, _seatIndex: uint256):
       self.tables[_tableId].hand.live[seatIndex] = self.tables[_tableId].stacks[seatIndex] > 0
     self.tables[_tableId].hand.dealer = self.nextPlayer(
       _tableId, self.tables[_tableId].hand.dealer)
-    self.tables[_tableId].hand.actionBlock = empty(uint256)
     # clear board and reshuffle
+    self.tables[_tableId].hand.actionBlock = empty(uint256)
     self.tables[_tableId].hand.board = empty(uint256[5])
     self.tables[_tableId].requirement = empty(uint256[26])
     self.tables[_tableId].hand.deckIndex = 0
@@ -511,17 +554,64 @@ def foldNext(_tableId: uint256, _seatIndex: uint256):
     self.tables[_tableId].hand.actionBlock = block.number
 
 @internal
+def drawToBoard(_tableId: uint256, _boardIndex: uint256):
+  self.tables[_tableId].drawIndex[
+    self.tables[_tableId].hand.deckIndex] = self.tables[_tableId].hand.betIndex
+  self.tables[_tableId].requirement[
+    self.tables[_tableId].hand.deckIndex] = Req_SHOW
+  self.tables[_tableId].deck.drawCard(
+    self.tables[_tableId].deckId,
+    self.tables[_tableId].hand.betIndex,
+    self.tables[_tableId].hand.deckIndex)
+  self.autoDecrypt(_tableId, self.tables[_tableId].hand.deckIndex)
+  self.tables[_tableId].hand.board[_boardIndex] = PENDING_REVEAL
+  self.tables[_tableId].hand.deckIndex = unsafe_add(self.tables[_tableId].hand.deckIndex, 1)
+
+@internal
+def actNext(_tableId: uint256, _seatIndex: uint256):
+  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
+  # check if the round is complete
+  if self.tables[_tableId].hand.actionIndex == self.tables[_tableId].hand.betIndex:
+    # collect pot
+    for seatIndex in range(MAX_SEATS):
+      if seatIndex == self.tables[_tableId].config.startsWith:
+        break
+      self.tables[_tableId].hand.pot += self.tables[_tableId].hand.bet[seatIndex]
+      self.tables[_tableId].hand.bet[seatIndex] = 0
+    # require revelations of next round's cards
+    if self.tables[_tableId].hand.board[0] == empty(uint256):
+      # burn card
+      self.tables[_tableId].hand.deckIndex = unsafe_add(self.tables[_tableId].hand.deckIndex, 1)
+      # deal flop
+      for boardIndex in range(3): self.drawToBoard(_tableId, boardIndex)
+    elif (self.tables[_tableId].hand.board[3] == empty(uint256) or
+          self.tables[_tableId].hand.board[4] == empty(uint256)):
+      boardIndex: uint256 = 4
+      if self.tables[_tableId].hand.board[3] == empty(uint256): boardIndex = 3
+      # burn card
+      self.tables[_tableId].hand.deckIndex = unsafe_add(self.tables[_tableId].hand.deckIndex, 1)
+      # deal turn or river card
+      self.drawToBoard(_tableId, boardIndex)
+    else:
+      # TODO: showdown
+      pass
+    self.tables[_tableId].hand.actionBlock = empty(uint256)
+    self.tables[_tableId].phase = Phase_DEAL
+    self.tables[_tableId].commitBlock = block.number
+  else:
+    self.tables[_tableId].hand.actionBlock = block.number
+
+@internal
 @view
-def nextPlayer(_tableId: uint256, _seatIndex: uint256) -> uint256:
+def nextPlayer(_tableId: uint256, _seatIndex: uint256, _includeAllIn: bool = True) -> uint256:
   nextIndex: uint256 = _seatIndex
   for _ in range(MAX_SEATS):
     if nextIndex == self.tables[_tableId].config.startsWith:
       nextIndex = 0
     else:
-      nextIndex += 1
+      nextIndex = unsafe_add(nextIndex, 1)
     if (self.tables[_tableId].stacks[nextIndex] == empty(uint256) and
-        not self.tables[_tableId].hand.live[nextIndex]):
-      # TODO: decide if this function lands on all-in players or not
+        not (_includeAllIn and self.tables[_tableId].hand.live[nextIndex])):
       continue
     else:
       return nextIndex
@@ -551,89 +641,6 @@ def placeBet(_tableId: uint256, _seatIndex: uint256, _size: uint256):
   self.tables[_tableId].stacks[_seatIndex] -= amount
   self.tables[_tableId].hand.bet[_seatIndex] += amount
 
-#@external
-#def startRound(_tableId: uint256):
-#  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-#  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-#  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
-#  assert self.tables[_tableId].hand.board[2] != empty(uint256), "board empty"
-#  assert self.tables[_tableId].hand.actionBlock == empty(uint256), "already betting"
-#  assert self.checkRevelations(_tableId), "required revelations missing"
-#  # fill the board with the revealedCards
-#  boardIndex: uint256 = 5
-#  cardIndex: uint256 = self.tables[_tableId].hand.deckIndex
-#  for _ in range(5):
-#    boardIndex -= 1
-#    if self.tables[_tableId].hand.board[boardIndex] == empty(uint256):
-#      continue
-#    elif self.tables[_tableId].hand.board[boardIndex] == PENDING_REVEAL:
-#      cardIndex -= 1
-#      self.tables[_tableId].hand.board[boardIndex] = self.revealedCard(_tableId, cardIndex)
-#    else:
-#      break
-#  self.tables[_tableId].hand.revealBlock = empty(uint256)
-#  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, self.tables[_tableId].hand.dealer)
-#  self.tables[_tableId].hand.betIndex = self.tables[_tableId].hand.actionIndex
-#  self.tables[_tableId].hand.actionBlock = block.number
-#
-#@internal
-#def actNext(_tableId: uint256, _seatIndex: uint256):
-#  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
-#  self.tables[_tableId].hand.actionBlock = block.number
-#  # check if the round is complete
-#  if self.tables[_tableId].hand.actionIndex == self.tables[_tableId].hand.betIndex:
-#    # collect pot
-#    for seatIndex in range(MAX_SEATS):
-#      if seatIndex == self.tables[_tableId].config.startsWith:
-#        break
-#      self.tables[_tableId].hand.pot += self.tables[_tableId].hand.bet[seatIndex]
-#      self.tables[_tableId].hand.bet[seatIndex] = 0
-#    # require revelations of next round's cards
-#    if self.tables[_tableId].hand.board[0] == empty(uint256):
-#      # deal flop
-#      # burn card
-#      self.tables[_tableId].hand.deckIndex += 1
-#      # flop cards
-#      for boardIndex in range(3):
-#        for seatIndex in range(MAX_SEATS):
-#          if seatIndex == self.tables[_tableId].config.startsWith:
-#            break
-#          self.tables[_tableId].revRequired[seatIndex][self.tables[_tableId].hand.deckIndex] = Req_MUST_SHOW
-#        self.tables[_tableId].hand.deckIndex += 1
-#        self.tables[_tableId].hand.board[boardIndex] = PENDING_REVEAL
-#      self.tables[_tableId].hand.revealBlock = block.number
-#      self.tables[_tableId].hand.actionBlock = empty(uint256)
-#    elif self.tables[_tableId].hand.board[3] == empty(uint256):
-#      # TODO: deal turn
-#      pass
-#    elif self.tables[_tableId].hand.board[4] == empty(uint256):
-#      # TODO: deal river
-#      pass
-#    else:
-#      # TODO: showdown
-#      pass
-#
-#@external
-#def fold(_tableId: uint256, _seatIndex: uint256):
-#  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-#  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-#  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-#  assert self.tables[_tableId].startBlock != empty(uint256), "not started"
-#  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
-#  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
-#  self.foldNext(_tableId, _seatIndex)
-#
-#@external
-#def check(_tableId: uint256, _seatIndex: uint256):
-#  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
-#  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-#  assert self.tables[_tableId].phase == Phase_PLAY, "wrong phase"
-#  assert self.tables[_tableId].startBlock != empty(uint256), "not started" # TODO: unnecessary?
-#  assert self.tables[_tableId].hand.actionBlock != empty(uint256), "not active"
-#  assert self.tables[_tableId].hand.actionIndex == _seatIndex, "wrong turn"
-#  assert self.tables[_tableId].hand.bet[self.tables[_tableId].hand.betIndex] == 0, "bet required"
-#  self.actNext(_tableId, _seatIndex)
-#
 #@external
 #def callBet(_tableId: uint256, _seatIndex: uint256):
 #  assert self.tables[_tableId].config.tableId == _tableId, "invalid tableId"
