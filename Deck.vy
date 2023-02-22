@@ -13,11 +13,11 @@
 
 GROUP_ORDER: constant(uint256) = 21888242871839275222246405745257275088696311157297823662689037894645226208583
 
-# arbitrary (large) limits on deck size and number of players sharing a deck
+# arbitrary limits on deck size and number of players sharing a deck
 # note: MAX_SIZE must be < GROUP_ORDER
 # TODO: we inline these because of https://github.com/vyperlang/vyper/issues/3294
-MAX_SIZE: constant(uint256) = 16384
-MAX_PLAYERS: constant(uint256) = 16385 # to distinguish from MAX_SIZE when inlining
+MAX_SIZE: constant(uint256) = 9000
+MAX_PLAYERS: constant(uint256) = 8000 # to distinguish from MAX_SIZE when inlining
 MAX_SECURITY: constant(uint256) = 256
 
 struct Proof:
@@ -27,7 +27,7 @@ struct Proof:
   hs:  uint256[2] # h ** s
   scx: uint256 # s + cx (mod q), where c = hash(g, h, gx, hx, gs, hs)
 
-struct DeckPrepCard:
+struct CP:
   # g and h are random points, x is a random secret scalar
   g:   uint256[2]
   h:   uint256[2]
@@ -36,11 +36,11 @@ struct DeckPrepCard:
   p: Proof
 
 struct DeckPrep:
-  cards: DynArray[DeckPrepCard, 16384]
+  cards: DynArray[CP, 9000]
 
 struct DrawCard:
   # successive decryptions
-  c: DynArray[uint256[2], 16385]
+  c: DynArray[uint256[2], 8000]
   # 1 + index of player the card is initially drawn to (i.e. they skip decryption)
   # note: a card can only be drawn to a single player
   drawnTo: uint256
@@ -51,28 +51,26 @@ struct Deck:
   # authorised address for drawing cards and reshuffling
   dealer: address
   # authorised address for each player
-  addrs: DynArray[address, 16385]
+  addrs: DynArray[address, 8000]
   # shuffle[0] is the unencrypted cards (including base card at index 0)
   # shuffle[j+1] is the shuffled encrypted cards from player index j
-  shuffle: DynArray[DynArray[uint256[2], 16384], 16386] # 16385 + 1] <- another Vyper bug with importing
-  challengeReq: DynArray[uint256, 16385]
-  challengeRes: DynArray[DynArray[DynArray[uint256[2], 16384], 256], 16385]
+  shuffle: DynArray[DynArray[uint256[2], 9000], 8001] # 8000 + 1] <- another Vyper bug with importing
+  challengeReq: DynArray[uint256, 8000]
+  challengeRes: DynArray[DynArray[DynArray[uint256[2], 9000], 256], 8000]
   challengeRnd: uint256
   # for decrypting shuffled cards
   # note: cards[i] corresponds to shuffle[_][i+1]
-  cards: DynArray[DrawCard, 16384]
+  cards: DynArray[DrawCard, 9000]
   # data for deck preparation
-  prep: DynArray[DeckPrep, 16385]
+  prep: DynArray[DeckPrep, 8000]
 
 decks: HashMap[uint256, Deck]
 nextId: public(uint256)
 
 @external
 def newDeck(_size: uint256, _players: uint256) -> uint256:
-  assert 0 < _size, "invalid size"
-  assert _size < MAX_SIZE, "invalid size"
-  assert 0 < _players, "invalid players"
-  assert _players <= MAX_PLAYERS, "invalid players"
+  assert 0 < _size and _size < MAX_SIZE, "invalid size"
+  assert 0 < _players and _players <= MAX_PLAYERS, "invalid players"
   id: uint256 = self.nextId
   self.decks[id].dealer = msg.sender
   for i in range(MAX_PLAYERS):
@@ -138,27 +136,17 @@ def hash(
 
 @internal
 @pure
-def chaumPederson(g: uint256[2], h: uint256[2], gx: uint256[2], hx: uint256[2], p: Proof) -> bool:
+def chaumPederson(cp: CP) -> bool:
   # unlike Chaum & Pederson we also include g and gx in the hash
   # so we are hashing the statement as well as the commitment
   # (see https://ia.cr/2016/771)
-  c: uint256 = self.internalHash(g, h, gx, hx, p.gs, p.hs)
-  gs_gxc: uint256[2] = ecadd(p.gs, ecmul(gx, c))
-  hs_hxc: uint256[2] = ecadd(p.hs, ecmul(hx, c))
-  g_scx: uint256[2] = ecmul(g, p.scx)
-  h_scx: uint256[2] = ecmul(h, p.scx)
+  c: uint256 = self.internalHash(cp.g, cp.h, cp.gx, cp.hx, cp.p.gs, cp.p.hs)
+  gs_gxc: uint256[2] = ecadd(cp.p.gs, ecmul(cp.gx, c))
+  hs_hxc: uint256[2] = ecadd(cp.p.hs, ecmul(cp.hx, c))
+  g_scx: uint256[2] = ecmul(cp.g, cp.p.scx)
+  h_scx: uint256[2] = ecmul(cp.h, cp.p.scx)
   return (gs_gxc[0] == g_scx[0] and gs_gxc[1] == g_scx[1] and
           hs_hxc[0] == h_scx[0] and hs_hxc[1] == h_scx[1])
-
-@internal
-@view
-def checkPrep(_id: uint256, _playerIdx: uint256, _cardIdx: uint256) -> bool:
-  return self.chaumPederson(
-    self.decks[_id].prep[_playerIdx].cards[_cardIdx].g,
-    self.decks[_id].prep[_playerIdx].cards[_cardIdx].h,
-    self.decks[_id].prep[_playerIdx].cards[_cardIdx].gx,
-    self.decks[_id].prep[_playerIdx].cards[_cardIdx].hx,
-    self.decks[_id].prep[_playerIdx].cards[_cardIdx].p)
 
 @external
 # returns index of first player that fails verification
@@ -174,7 +162,7 @@ def finishPrep(_id: uint256) -> uint256:
     for playerIdx in range(MAX_PLAYERS):
       if playerIdx == numPlayers:
         break
-      if self.checkPrep(_id, playerIdx, cardIdx):
+      if self.chaumPederson(self.decks[_id].prep[playerIdx].cards[cardIdx]):
         self.decks[_id].shuffle[0][cardIdx] = ecadd(
           self.decks[_id].shuffle[0][cardIdx],
           self.decks[_id].prep[playerIdx].cards[cardIdx].hx)
@@ -191,11 +179,11 @@ def shuffleCount(_id: uint256) -> uint256:
 
 @external
 @view
-def lastShuffle(_id: uint256) -> DynArray[uint256[2], 16384]:
+def lastShuffle(_id: uint256) -> DynArray[uint256[2], 9000]:
   return self.decks[_id].shuffle[unsafe_sub(len(self.decks[_id].shuffle), 1)]
 
 @external
-def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 16384]):
+def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 9000]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].shuffle) == unsafe_add(_playerIdx, 1), "wrong player"
   assert len(self.decks[_id].shuffle[0]) == len(_shuffle), "wrong length"
@@ -222,7 +210,7 @@ def challengeRnd(_id: uint256, _playerIdx: uint256) -> uint256:
 
 @external
 def respondChallenge(_id: uint256, _playerIdx: uint256,
-                     _data: DynArray[DynArray[uint256[2], 16384], 256]):
+                     _data: DynArray[DynArray[uint256[2], 9000], 256]):
   assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert self.decks[_id].challengeReq[_playerIdx] == len(_data), "wrong length"
@@ -233,7 +221,7 @@ def respondChallenge(_id: uint256, _playerIdx: uint256,
 @external
 def defuseChallenge(_id: uint256, _playerIdx: uint256,
                     _scalars: DynArray[uint256, 256],
-                    _permutations: DynArray[DynArray[uint256, 16384], 256]):
+                    _permutations: DynArray[DynArray[uint256, 9000], 256]):
   assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert len(self.decks[_id].challengeRes[_playerIdx]) == len(_scalars), "no response"
@@ -286,12 +274,12 @@ def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
     assert (_card[0] == self.decks[_id].cards[_cardIdx].c[_playerIdx][0] and
             _card[1] == self.decks[_id].cards[_cardIdx].c[_playerIdx][1]), "wrong card"
   else:
-    assert self.chaumPederson(
-      self.decks[_id].shuffle[_playerIdx][0],
-      _card,
-      self.decks[_id].shuffle[unsafe_add(_playerIdx, 1)][0],
-      self.decks[_id].cards[_cardIdx].c[_playerIdx],
-      _proof), "verification failed"
+    assert self.chaumPederson(CP({
+      g: self.decks[_id].shuffle[_playerIdx][0],
+      h: _card,
+      gx: self.decks[_id].shuffle[unsafe_add(_playerIdx, 1)][0],
+      hx: self.decks[_id].cards[_cardIdx].c[_playerIdx],
+      p: _proof})), "verification failed"
   self.decks[_id].cards[_cardIdx].c.append(_card)
 
 @external
@@ -302,12 +290,12 @@ def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
   assert len(self.decks[_id].cards[_cardIdx].c) == unsafe_add(
     len(self.decks[_id].addrs), 1), "not decrypted"
   assert self.decks[_id].cards[_cardIdx].opensAs == 0, "already open"
-  assert self.chaumPederson(
-    self.decks[_id].shuffle[_playerIdx][0],
-    self.decks[_id].shuffle[0][_openIdx],
-    self.decks[_id].shuffle[unsafe_add(_playerIdx, 1)][0],
-    self.decks[_id].cards[_cardIdx].c[len(self.decks[_id].addrs)],
-    _proof), "verification failed"
+  assert self.chaumPederson(CP({
+    g: self.decks[_id].shuffle[_playerIdx][0],
+    h: self.decks[_id].shuffle[0][_openIdx],
+    gx: self.decks[_id].shuffle[unsafe_add(_playerIdx, 1)][0],
+    hx: self.decks[_id].cards[_cardIdx].c[len(self.decks[_id].addrs)],
+    p: _proof})), "verification failed"
   self.decks[_id].cards[_cardIdx].opensAs = unsafe_add(_openIdx, 1)
 
 @external
@@ -323,5 +311,6 @@ def resetShuffle(_id: uint256):
   self.decks[_id].challengeRes = empty(
     DynArray[DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY], MAX_PLAYERS])
   for cardIdx in range(MAX_SIZE):
-    if cardIdx == len(self.decks[_id].shuffle[0]): break
+    if cardIdx == len(self.decks[_id].shuffle[0]):
+      break
     self.decks[_id].cards[cardIdx] = empty(DrawCard)
