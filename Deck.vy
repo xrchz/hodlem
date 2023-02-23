@@ -1,4 +1,4 @@
-# @version ^0.3.7
+# @version ^0.3.8
 # mental poker deck protocol
 #
 # Implements the paper
