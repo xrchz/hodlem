@@ -88,7 +88,7 @@ struct Table:
   deckId:      uint256              # id of deck in deck contract
   phase:       uint256
   present:     bool[9]              # whether each player contributes to the current shuffle
-  handId:      uint256              # id of hand in hand contract
+  gameId:      uint256              # id of game in game contract
   commitBlock: uint256              # block from which new commitments were required
   deckIndex:   uint256              # index of next card in deck
   drawIndex:   uint256[26]          # player the card is drawn to
@@ -408,8 +408,8 @@ def authorised(_tableId: uint256, _phase: uint256,
 
 @external
 @view
-def handId(_tableId: uint256) -> uint256:
-  return self.tables[_tableId].handId
+def gameId(_tableId: uint256) -> uint256:
+  return self.tables[_tableId].gameId
 
 @external
 @view
