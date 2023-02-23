@@ -112,10 +112,9 @@ def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
 
 @internal
 @pure
-def internalHash(
-      g: uint256[2], h: uint256[2],
-      gx: uint256[2], hx: uint256[2],
-      gs: uint256[2], hs: uint256[2]) -> uint256:
+def hash(g: uint256[2], h: uint256[2],
+         gx: uint256[2], hx: uint256[2],
+         gs: uint256[2], hs: uint256[2]) -> uint256:
   return convert(
     sha256(concat(
       convert(g[0], bytes32), convert(g[1], bytes32),
@@ -128,11 +127,11 @@ def internalHash(
 
 @external
 @pure
-def hash(
-      g: uint256[2], h: uint256[2],
-      gx: uint256[2], hx: uint256[2],
-      gs: uint256[2], hs: uint256[2]) -> uint256:
-  return self.internalHash(g, h, gx, hx, gs, hs)
+def emptyProof(card: uint256[2]) -> Proof:
+  return Proof({
+    gs: empty(uint256[2]),
+    hs: empty(uint256[2]),
+    scx: self.hash(card, card, card, card, empty(uint256[2]), empty(uint256[2]))})
 
 @internal
 @pure
@@ -140,7 +139,7 @@ def chaumPederson(cp: CP) -> bool:
   # unlike Chaum & Pederson we also include g and gx in the hash
   # so we are hashing the statement as well as the commitment
   # (see https://ia.cr/2016/771)
-  c: uint256 = self.internalHash(cp.g, cp.h, cp.gx, cp.hx, cp.p.gs, cp.p.hs)
+  c: uint256 = self.hash(cp.g, cp.h, cp.gx, cp.hx, cp.p.gs, cp.p.hs)
   gs_gxc: uint256[2] = ecadd(cp.p.gs, ecmul(cp.gx, c))
   hs_hxc: uint256[2] = ecadd(cp.p.hs, ecmul(cp.hx, c))
   g_scx: uint256[2] = ecmul(cp.g, cp.p.scx)
@@ -204,19 +203,15 @@ def challengeActive(_id: uint256, _playerIdx: uint256) -> bool:
   return self.decks[_id].challengeReq[_playerIdx] != 0
 
 @external
-@view
-def challengeRnd(_id: uint256, _playerIdx: uint256) -> uint256:
-  return self.decks[_id].challengeRnd
-
-@external
 def respondChallenge(_id: uint256, _playerIdx: uint256,
-                     _data: DynArray[DynArray[uint256[2], 9000], 256]):
+                     _data: DynArray[DynArray[uint256[2], 9000], 256]) -> uint256:
   assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert self.decks[_id].challengeReq[_playerIdx] == len(_data), "wrong length"
   assert len(self.decks[_id].challengeRes[_playerIdx]) == 0, "already responded"
   self.decks[_id].challengeRes[_playerIdx] = _data
   self.decks[_id].challengeRnd = block.prevrandao
+  return block.prevrandao
 
 @external
 def defuseChallenge(_id: uint256, _playerIdx: uint256,
