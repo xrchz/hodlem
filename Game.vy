@@ -69,12 +69,12 @@ struct Game:
   dealer:      uint256            # seat index of current dealer
   board:       uint256[5]         # board cards
   bet:         uint256[MAX_SEATS] # current round bet of each player
-  lastBet:     uint256            # size of last bet or raise
-  live:        bool[MAX_SEATS]    # whether this player has a live hand
   betIndex:    uint256            # seat index of player who introduced the current bet
+  minRaise:    uint256            # size of the minimum raise
+  liveUntil:   uint256[MAX_SEATS] # index of first pot player is not live in
+  pot:         uint256[MAX_SEATS] # pot and side pots
   actionIndex: uint256            # seat index of currently active player
   actionBlock: uint256            # block from which action was on the active player
-  pot:         uint256            # pot for the hand (from previous rounds)
 
 nextGameId: uint256
 games: HashMap[uint256, Game]
@@ -91,7 +91,7 @@ def selectDealer(_tableId: uint256):
   for seatIndex in range(MAX_PLAYERS):
     if seatIndex == T.numPlayers(_tableId):
       break
-    self.games[gameId].live[seatIndex] = True
+    self.games[gameId].liveUntil[seatIndex] = 1
     self.games[gameId].stack[seatIndex] = T.buyIn(_tableId)
     card: uint256 = T.cardAt(_tableId, seatIndex)
     if highestCard < card:
@@ -132,7 +132,7 @@ def postBlinds(_tableId: uint256):
   self.placeBet(gameId, seatIndex, blind)
   seatIndex = self.roundNextActor(_tableId, seatIndex)
   self.games[gameId].betIndex = seatIndex
-  self.games[gameId].lastBet = blind
+  self.games[gameId].minRaise = blind
   self.games[gameId].actionIndex = seatIndex
   self.games[gameId].actionBlock = block.number
 
@@ -147,7 +147,7 @@ def validateTurn(_tableId: uint256, _seatIndex: uint256) -> uint256:
 @external
 def fold(_tableId: uint256, _seatIndex: uint256):
   gameId: uint256 = self.validateTurn(_tableId, _seatIndex)
-  self.games[gameId].live[_seatIndex] = False
+  self.games[gameId].liveUntil[_seatIndex] = 0
   self.afterAct(_tableId, _seatIndex)
 
 @external
@@ -156,35 +156,42 @@ def check(_tableId: uint256, _seatIndex: uint256):
   assert self.games[gameId].bet[self.games[gameId].betIndex] == 0, "bet required"
   self.afterAct(_tableId, _seatIndex)
 
+@internal
+def addSidePot(_numPlayers: uint256, _gameId: uint256, _nextPot: uint256):
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == _numPlayers:
+      break
+    elif self.games[_gameId].stack[seatIndex] == 0:
+      continue
+    elif self.games[_gameId].liveUntil[seatIndex] == _nextPot:
+      self.games[_gameId].liveUntil[seatIndex] = unsafe_add(_nextPot, 1)
+
 @external
 def callBet(_tableId: uint256, _seatIndex: uint256):
   gameId: uint256 = self.validateTurn(_tableId, _seatIndex)
-  assert self.games[gameId].bet[self.games[gameId].betIndex] > 0, "no bet"
-  # TODO: handle calling all-in (if side pot needed?)
-  self.placeBet(gameId, _seatIndex, self.games[gameId].bet[self.games[gameId].betIndex])
+  bet: uint256 = self.games[gameId].bet[self.games[gameId].betIndex]
+  raiseBy: uint256 = bet - self.games[gameId].bet[_seatIndex]
+  assert raiseBy > 0, "nothing to call"
+  self.placeBet(gameId, _seatIndex, raiseBy)
+  if self.games[gameId].stack[_seatIndex] < raiseBy: # calling all-in with side-pot
+    self.addSidePot(T.numPlayers(_tableId), gameId, self.games[gameId].liveUntil[_seatIndex])
   self.afterAct(_tableId, _seatIndex)
 
 @external
-def bet(_tableId: uint256, _seatIndex: uint256, _size: uint256):
+def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
   gameId: uint256 = self.validateTurn(_tableId, _seatIndex)
-  assert self.games[gameId].bet[self.games[gameId].betIndex] == 0, "call/raise required"
-  assert _size <= self.games[gameId].stack[_seatIndex], "size exceeds stack"
-  # TODO: handle betting all-in (if side pot needed?)
-  self.placeBet(gameId, _seatIndex, _size)
+  bet: uint256 = self.games[gameId].bet[self.games[gameId].betIndex]
+  assert _raiseTo > bet, "not a bet/raise"
+  raiseBy: uint256 = _raiseTo - bet
+  size: uint256 = _raiseTo - self.games[gameId].bet[_seatIndex]
+  assert size <= self.games[gameId].stack[_seatIndex], "size exceeds stack"
+  self.placeBet(gameId, _seatIndex, size)
   self.games[gameId].betIndex = _seatIndex
-  self.games[gameId].lastBet = _size
-  self.afterAct(_tableId, _seatIndex)
-
-@external
-def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseBy: uint256):
-  gameId: uint256 = self.validateTurn(_tableId, _seatIndex)
-  assert self.games[gameId].bet[self.games[gameId].betIndex] > 0, "no bet"
-  assert _raiseBy <= self.games[gameId].stack[_seatIndex], "size exceeds stack"
-  # TODO: allow below minimum if raising all in; handle side pot, adjust lastBet
-  assert _raiseBy >= self.games[gameId].lastBet, "size below minimum"
-  self.placeBet(gameId, _seatIndex, _raiseBy)
-  self.games[gameId].betIndex = _seatIndex
-  self.games[gameId].lastBet = _raiseBy
+  if raiseBy >= self.games[gameId].minRaise:
+    self.games[gameId].minRaise = raiseBy
+  else: # raising all-in
+    assert self.games[gameId].stack[_seatIndex] == 0, "below minimum"
+    self.addSidePot(T.numPlayers(_tableId), gameId, self.games[gameId].liveUntil[_seatIndex])
   self.afterAct(_tableId, _seatIndex)
 
 @external
@@ -217,7 +224,7 @@ def actTimeout(_tableId: uint256):
   assert self.games[gameId].actionBlock != empty(uint256), "not active"
   assert block.number > (self.games[gameId].actionBlock +
                          T.actBlocks(_tableId)), "deadline not passed"
-  self.games[gameId].live[self.games[gameId].actionIndex] = False
+  self.games[gameId].liveUntil[self.games[gameId].actionIndex] = 0
   self.afterAct(_tableId, self.games[gameId].actionIndex)
 
 @internal
