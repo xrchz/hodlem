@@ -107,11 +107,12 @@ def dealHoleCards(_tableId: uint256):
   gameId: uint256 = T.gameId(_tableId)
   assert self.games[gameId].startBlock != empty(uint256), "not started"
   assert T.deckIndex(_tableId) == 0, "already dealt"
+  numPlayers: uint256 = T.numPlayers(_tableId)
   seatIndex: uint256 = self.games[gameId].dealer
   self.games[gameId].betIndex = seatIndex
   for __ in range(2):
     for _ in range(MAX_SEATS):
-      seatIndex = self.roundNextActor(_tableId, seatIndex)
+      seatIndex = self.roundNextActor(numPlayers, gameId, seatIndex)
       T.dealTo(_tableId, seatIndex)
       if seatIndex == self.games[gameId].dealer:
         break
@@ -124,13 +125,14 @@ def postBlinds(_tableId: uint256):
   assert self.games[gameId].startBlock != empty(uint256), "not started"
   assert self.games[gameId].board[0] == empty(uint256), "board not empty"
   assert self.games[gameId].actionBlock == empty(uint256), "already betting"
-  seatIndex: uint256 = self.roundNextActor(_tableId, self.games[gameId].dealer)
+  numPlayers: uint256 = T.numPlayers(_tableId)
+  seatIndex: uint256 = self.roundNextActor(numPlayers, gameId, self.games[gameId].dealer)
   blind: uint256 = self.smallBlind(_tableId)
   self.placeBet(gameId, seatIndex, blind)
-  seatIndex = self.roundNextActor(_tableId, seatIndex)
+  seatIndex = self.roundNextActor(numPlayers, gameId, seatIndex)
   blind = unsafe_add(blind, blind)
   self.placeBet(gameId, seatIndex, blind)
-  seatIndex = self.roundNextActor(_tableId, seatIndex)
+  seatIndex = self.roundNextActor(numPlayers, gameId, seatIndex)
   self.games[gameId].betIndex = seatIndex
   self.games[gameId].minRaise = blind
   self.games[gameId].actionIndex = seatIndex
@@ -148,13 +150,13 @@ def validateTurn(_tableId: uint256, _seatIndex: uint256) -> uint256:
 def fold(_tableId: uint256, _seatIndex: uint256):
   gameId: uint256 = self.validateTurn(_tableId, _seatIndex)
   self.games[gameId].liveUntil[_seatIndex] = 0
-  self.afterAct(_tableId, _seatIndex)
+  self.afterAct(_tableId, gameId, _seatIndex)
 
 @external
 def check(_tableId: uint256, _seatIndex: uint256):
   gameId: uint256 = self.validateTurn(_tableId, _seatIndex)
   assert self.games[gameId].bet[self.games[gameId].betIndex] == 0, "bet required"
-  self.afterAct(_tableId, _seatIndex)
+  self.afterAct(_tableId, gameId, _seatIndex)
 
 @internal
 def addSidePot(_numPlayers: uint256, _gameId: uint256, _nextPot: uint256):
@@ -175,7 +177,7 @@ def callBet(_tableId: uint256, _seatIndex: uint256):
   self.placeBet(gameId, _seatIndex, raiseBy)
   if self.games[gameId].stack[_seatIndex] < raiseBy: # calling all-in with side-pot
     self.addSidePot(T.numPlayers(_tableId), gameId, self.games[gameId].liveUntil[_seatIndex])
-  self.afterAct(_tableId, _seatIndex)
+  self.afterAct(_tableId, gameId, _seatIndex)
 
 @external
 def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
@@ -192,7 +194,7 @@ def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
   else: # raising all-in
     assert self.games[gameId].stack[_seatIndex] == 0, "below minimum"
     self.addSidePot(T.numPlayers(_tableId), gameId, self.games[gameId].liveUntil[_seatIndex])
-  self.afterAct(_tableId, _seatIndex)
+  self.afterAct(_tableId, gameId, _seatIndex)
 
 @external
 def dealNextRound(_tableId: uint256):
@@ -213,9 +215,15 @@ def dealNextRound(_tableId: uint256):
     else:
       break
   self.games[gameId].betIndex = self.games[gameId].dealer
-  self.games[gameId].actionIndex = self.roundNextActor(_tableId, self.games[gameId].dealer)
-  self.games[gameId].betIndex = self.games[gameId].actionIndex
-  self.games[gameId].actionBlock = block.number
+  self.games[gameId].actionIndex = self.roundNextActor(
+    T.numPlayers(_tableId), gameId, self.games[gameId].dealer)
+  if self.games[gameId].actionIndex == self.games[gameId].dealer:
+    # all live players all-in this round
+    # TODO: set next cards to reveal (similar to afterAct)
+    pass
+  else:
+    self.games[gameId].betIndex = self.games[gameId].actionIndex
+    self.games[gameId].actionBlock = block.number
 
 @external
 def actTimeout(_tableId: uint256):
@@ -225,23 +233,28 @@ def actTimeout(_tableId: uint256):
   assert block.number > (self.games[gameId].actionBlock +
                          T.actBlocks(_tableId)), "deadline not passed"
   self.games[gameId].liveUntil[self.games[gameId].actionIndex] = 0
-  self.afterAct(_tableId, self.games[gameId].actionIndex)
+  self.afterAct(_tableId, gameId, self.games[gameId].actionIndex)
 
 @internal
-def afterAct(_tableId: uint256, _seatIndex: uint256):
-  # TODO: implement
-  # check if a player is still left to act in this round:
-  # pass action to them and set new actionBlock
-  #
-  # if nobody is left to act in this round:
-  # if only one player is left standing, they win the pot
-  # elif there are board cards to come, deal the next round
-  # else move into showdown phase
-  #   each remaining player shows cards or mucks (+ folds) in turn
-  #   all remaining players compete for best hands
-  #   best hands split the pot
-  #   TODO: handle side pots
-  pass
+def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
+  self.games[_gameId].actionIndex = self.roundNextActor(_tableId, _gameId, _seatIndex)
+  if self.games[_gameId].actionIndex == self.games[_gameId].betIndex:
+    # nobody is left to act in this round
+    # if there are board cards to come
+    #   move bets to pots
+        self.games[_gameId].minRaise = 0 # TODO: should it be the big blind?
+    #   request card reveals for dealing next round
+    # else
+    #   in any pots where only one player is left standing, they win that pot
+    #   for any remaining pots, move into the showdown phase
+    #     each remaining player shows cards or mucks (+ folds) in turn
+    #     all remaining players compete for best hands
+    #     best hands split the pot
+    #     TODO: handle side pots
+  else:
+    # a player is still left to act in this round
+    # pass action to them and set new actionBlock
+    self.games[_gameId].actionBlock = block.number
 
 # @internal
 # def drawToBoard(_tableId: uint256, _boardIndex: uint256):
@@ -259,7 +272,6 @@ def afterAct(_tableId: uint256, _seatIndex: uint256):
 
 #@internal
 #def actNext(_tableId: uint256, _seatIndex: uint256):
-#  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex)
 #  # check if the round is complete
 #  if self.tables[_tableId].hand.actionIndex == self.tables[_tableId].hand.betIndex:
 #    # collect pot
@@ -320,14 +332,12 @@ def afterAct(_tableId: uint256, _seatIndex: uint256):
 
 @internal
 @view
-def roundNextActor(_tableId: uint256, _seatIndex: uint256) -> uint256:
-  gameId: uint256 = T.gameId(_tableId)
-  numPlayers: uint256 = T.numPlayers(_tableId)
+def roundNextActor(_numPlayers: uint256, _gameId: uint256, _seatIndex: uint256) -> uint256:
   nextIndex: uint256 = _seatIndex
   for _ in range(MAX_SEATS):
-    nextIndex = uint256_addmod(nextIndex, 1, numPlayers)
-    if (nextIndex == self.games[gameId].betIndex or
-        self.games[gameId].stack[nextIndex] != empty(uint256)):
+    nextIndex = uint256_addmod(nextIndex, 1, _numPlayers)
+    if (nextIndex == self.games[_gameId].betIndex or
+        self.games[_gameId].stack[nextIndex] != empty(uint256)):
       return nextIndex
   raise "betIndex not found"
 
