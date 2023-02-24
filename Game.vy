@@ -259,12 +259,39 @@ def collectPots(_numPlayers: uint256, _gameId: uint256):
         self.games[_gameId].pot[potIndex] = unsafe_add(self.games[_gameId].pot[potIndex], minBet)
 
 @internal
+def settleUncontested(_numPlayers: uint256, _gameId: uint256) -> uint256:
+  numContested: uint256 = 0
+  potPlayers: uint256[MAX_SEATS] = empty(uint256[MAX_SEATS])
+  contestant: uint256[MAX_SEATS] = empty(uint256[MAX_SEATS])
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == _numPlayers:
+      break
+    for potIndex in range(MAX_SEATS):
+      if potIndex == self.games[_gameId].liveUntil[seatIndex]:
+        break
+      potPlayers[potIndex] = unsafe_add(potPlayers[potIndex], 1)
+      contestant[potIndex] = seatIndex
+  for potIndex in range(MAX_SEATS):
+    if potPlayers[potIndex] == 0:
+      break
+    elif potPlayers[potIndex] == 1:
+      self.games[_gameId].stack[contestant[potIndex]] = unsafe_add(
+        self.games[_gameId].stack[contestant[potIndex]],
+        self.games[_gameId].pot[potIndex])
+      self.games[_gameId].pot[potIndex] = empty(uint256)
+    else:
+      numContested = unsafe_add(numContested, 1)
+  return numContested
+
+@internal
 def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
   self.games[_gameId].actionIndex = self.roundNextActor(_tableId, _gameId, _seatIndex)
   if self.games[_gameId].actionIndex == self.games[_gameId].betIndex:
     # nobody is left to act in this round
     # move bets to pots
-    self.collectPots(T.numPlayers(_tableId), _gameId)
+    numPlayers: uint256 = T.numPlayers(_tableId)
+    self.collectPots(numPlayers, _gameId)
+    numContested: uint256 = self.settleUncontested(numPlayers, _gameId)
     if self.games[_gameId].board[4] == empty(uint256):
       # there are board cards to come
       self.games[_gameId].minRaise = 0 # TODO: should it be the big blind?
