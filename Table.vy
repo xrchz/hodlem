@@ -157,6 +157,17 @@ def startGame(_tableId: uint256):
   self.tables[_tableId].phase = Phase_PREP
   self.tables[_tableId].commitBlock = block.number
 
+@external
+def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
+  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  send(self.playerAddress[self.tables[_tableId].seats[_seatIndex]],
+       unsafe_add(self.tables[_tableId].config.bond, _stack))
+
+@external
+def deleteTable(_tableId: uint256):
+  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.tables[_tableId] = empty(Table)
+
 # timeouts
 
 @external
@@ -426,6 +437,11 @@ def deckIndex(_tableId: uint256) -> uint256:
 @view
 def numPlayers(_tableId: uint256) -> uint256:
   return self.tables[_tableId].config.startsWith
+
+@external
+@view
+def maxPlayers(_tableId: uint256) -> uint256:
+  return self.tables[_tableId].config.untilLeft
 
 @external
 @view

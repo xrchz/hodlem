@@ -222,6 +222,7 @@ def dealNextRound(_tableId: uint256):
     # TODO: set next cards to reveal (similar to afterAct)
     pass
   else:
+    self.games[gameId].minRaise = unsafe_mul(2, self.smallBlind(_tableId))
     self.games[gameId].betIndex = self.games[gameId].actionIndex
     self.games[gameId].actionBlock = block.number
 
@@ -284,6 +285,17 @@ def settleUncontested(_numPlayers: uint256, _gameId: uint256) -> uint256:
   return numContested
 
 @internal
+@view
+def playersLeft(_numPlayers: uint256, _gameId: uint256) -> uint256:
+  playersLeft: uint256 = 0
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == _numPlayers:
+      break
+    if self.games[_gameId].stack[seatIndex] != empty(uint256):
+      playersLeft = unsafe_add(playersLeft, 1)
+  return playersLeft
+
+@internal
 def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
   self.games[_gameId].actionIndex = self.roundNextActor(_tableId, _gameId, _seatIndex)
   if self.games[_gameId].actionIndex == self.games[_gameId].betIndex:
@@ -291,18 +303,34 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
     # move bets to pots
     numPlayers: uint256 = T.numPlayers(_tableId)
     self.collectPots(numPlayers, _gameId)
+    # settle uncontested pots
     numContested: uint256 = self.settleUncontested(numPlayers, _gameId)
-    if self.games[_gameId].board[4] == empty(uint256):
+    if numContested == 0:
+      # round is over
+      if self.playersLeft(numPlayers, _gameId) <= T.maxPlayers(_tableId):
+        # game is over
+        # everyone gets their stack
+        # and refund all bonds
+        for seatIndex in range(MAX_SEATS):
+          if seatIndex == numPlayers:
+            break
+          T.refundPlayer(_tableId, seatIndex, self.games[_gameId].stack[seatIndex])
+        # delete the game
+        self.games[_gameId] = empty(Game)
+        T.deleteTable(_tableId)
+      else:
+        pass
+        # prepare new shuffle for next hand
+    elif self.games[_gameId].board[4] == empty(uint256):
+      pass
       # there are board cards to come
-      self.games[_gameId].minRaise = 0 # TODO: should it be the big blind?
-      # request card reveals for dealing next round
-    # else
-    #   in any pots where only one player is left standing, they win that pot
-    #   for any remaining pots, move into the showdown phase
-    #     each remaining player shows cards or mucks (+ folds) in turn
-    #     all remaining players compete for best hands
-    #     best hands split the pot
-    #     TODO: handle side pots
+      # prepare another round of betting to settle remaining pots
+    else:
+      pass
+      # showdown to settle remaining pots
+      # each remaining player shows cards or mucks (+ folds) in turn
+      # all remaining players compete for best hands
+      # best hands split the pot
   else:
     # a player is still left to act in this round
     # pass action to them and set new actionBlock
