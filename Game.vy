@@ -236,14 +236,39 @@ def actTimeout(_tableId: uint256):
   self.afterAct(_tableId, gameId, self.games[gameId].actionIndex)
 
 @internal
+def collectPots(_numPlayers: uint256, _gameId: uint256):
+  maxLiveUntil: uint256 = 0
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == _numPlayers:
+      break
+    maxLiveUntil = max(maxLiveUntil, self.games[_gameId].liveUntil[seatIndex])
+  for potIndex in range(MAX_SEATS):
+    if potIndex == maxLiveUntil:
+      break
+    minBet: uint256 = max_value(uint256)
+    for seatIndex in range(MAX_SEATS):
+      if seatIndex == _numPlayers:
+        break
+      if potIndex < self.games[_gameId].liveUntil[seatIndex]:
+        minBet = min(minBet, self.games[_gameId].bet[seatIndex])
+    for seatIndex in range(MAX_SEATS):
+      if seatIndex == _numPlayers:
+        break
+      if potIndex < self.games[_gameId].liveUntil[seatIndex]:
+        self.games[_gameId].bet[seatIndex] = unsafe_sub(self.games[_gameId].bet[seatIndex], minBet)
+        self.games[_gameId].pot[potIndex] = unsafe_add(self.games[_gameId].pot[potIndex], minBet)
+
+@internal
 def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
   self.games[_gameId].actionIndex = self.roundNextActor(_tableId, _gameId, _seatIndex)
   if self.games[_gameId].actionIndex == self.games[_gameId].betIndex:
     # nobody is left to act in this round
-    # if there are board cards to come
-    #   move bets to pots
-        self.games[_gameId].minRaise = 0 # TODO: should it be the big blind?
-    #   request card reveals for dealing next round
+    # move bets to pots
+    self.collectPots(T.numPlayers(_tableId), _gameId)
+    if self.games[_gameId].board[4] == empty(uint256):
+      # there are board cards to come
+      self.games[_gameId].minRaise = 0 # TODO: should it be the big blind?
+      # request card reveals for dealing next round
     # else
     #   in any pots where only one player is left standing, they win that pot
     #   for any remaining pots, move into the showdown phase
@@ -361,5 +386,5 @@ def smallBlind(_tableId: uint256) -> uint256:
 @internal
 def placeBet(_gameId: uint256, _seatIndex: uint256, _size: uint256):
   amount: uint256 = min(_size, self.games[_gameId].stack[_seatIndex])
-  self.games[_gameId].stack[_seatIndex] -= amount
-  self.games[_gameId].bet[_seatIndex] += amount
+  self.games[_gameId].stack[_seatIndex] = unsafe_sub(self.games[_gameId].stack[_seatIndex], amount)
+  self.games[_gameId].bet[_seatIndex] = unsafe_add(self.games[_gameId].bet[_seatIndex], amount)
