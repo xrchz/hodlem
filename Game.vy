@@ -319,12 +319,20 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
         self.games[_gameId] = empty(Game)
         T.deleteTable(_tableId)
       else:
-        pass
         # prepare new shuffle for next hand
+        T.reshuffle(_tableId)
     elif self.games[_gameId].board[4] == empty(uint256):
-      pass
-      # there are board cards to come
-      # prepare another round of betting to settle remaining pots
+      # there are board cards to come: deal the next one
+      cardIndex: uint256 = empty(uint256)
+      T.burnCard(_tableId)
+      if self.games[_gameId].board[0] == empty(uint256): # flop
+        for boardIndex in range(3):
+          self.drawToBoard(_tableId, _gameId, boardIndex)
+      elif self.games[_gameId].board[3] == empty(uint256): # turn
+        self.drawToBoard(_tableId, _gameId, 3)
+      else: # river
+        self.drawToBoard(_tableId, _gameId, 4)
+      T.startDeal(_tableId)
     else:
       pass
       # showdown to settle remaining pots
@@ -336,19 +344,11 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
     # pass action to them and set new actionBlock
     self.games[_gameId].actionBlock = block.number
 
-# @internal
-# def drawToBoard(_tableId: uint256, _boardIndex: uint256):
-#   self.tables[_tableId].drawIndex[
-#     self.tables[_tableId].hand.deckIndex] = self.tables[_tableId].hand.betIndex
-#   self.tables[_tableId].requirement[
-#     self.tables[_tableId].hand.deckIndex] = Req_SHOW
-#   self.tables[_tableId].deck.drawCard(
-#     self.tables[_tableId].deckId,
-#     self.tables[_tableId].hand.betIndex,
-#     self.tables[_tableId].hand.deckIndex)
-#   self.autoDecrypt(_tableId, self.tables[_tableId].hand.deckIndex)
-#   self.tables[_tableId].hand.board[_boardIndex] = PENDING_REVEAL
-#   self.tables[_tableId].hand.deckIndex = unsafe_add(self.tables[_tableId].hand.deckIndex, 1)
+@internal
+def drawToBoard(_tableId: uint256, _gameId: uint256, _boardIndex: uint256):
+  cardIndex: uint256 = T.dealTo(_tableId, self.games[_gameId].betIndex)
+  T.showCard(_tableId, cardIndex)
+  self.games[_gameId].board[_boardIndex] = PENDING_REVEAL
 
 #@internal
 #def actNext(_tableId: uint256, _seatIndex: uint256):

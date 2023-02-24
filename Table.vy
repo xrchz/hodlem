@@ -396,12 +396,24 @@ def startDeal(_tableId: uint256):
   self.tables[_tableId].commitBlock = block.number
 
 @external
-def dealTo(_tableId: uint256, _seatIndex: uint256):
+def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256:
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
-  self.tables[_tableId].drawIndex[self.tables[_tableId].deckIndex] = _seatIndex
-  self.tables[_tableId].requirement[self.tables[_tableId].deckIndex] = Req_HAND
+  deckIndex: uint256 = self.tables[_tableId].deckIndex
+  self.tables[_tableId].drawIndex[deckIndex] = _seatIndex
+  self.tables[_tableId].requirement[deckIndex] = Req_HAND
   self.tables[_tableId].deck.drawCard(
-    self.tables[_tableId].deckId, _seatIndex, self.tables[_tableId].deckIndex)
+    self.tables[_tableId].deckId, _seatIndex, deckIndex)
+  self.tables[_tableId].deckIndex = unsafe_add(deckIndex, 1)
+  return deckIndex
+
+@external
+def showCard(_tableId: uint256, _cardIndex: uint256):
+  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.tables[_tableId].requirement[_cardIndex] = Req_SHOW
+
+@external
+def burnCard(_tableId: uint256):
+  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   self.tables[_tableId].deckIndex = unsafe_add(self.tables[_tableId].deckIndex, 1)
 
 # view info
