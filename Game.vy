@@ -139,8 +139,8 @@ def postBlinds(_tableId: uint256):
   self.games[gameId].actionBlock = block.number
 
 @internal
-def validateTurn(_tableId: uint256, _seatIndex: uint256) -> uint256:
-  assert T.authorised(_tableId, Phase_PLAY, _seatIndex, msg.sender), "unauthorised"
+def validateTurn(_tableId: uint256, _seatIndex: uint256, _phase: uint256 = Phase_PLAY) -> uint256:
+  assert T.authorised(_tableId, _phase, _seatIndex, msg.sender), "unauthorised"
   gameId: uint256 = T.gameId(_tableId)
   assert self.games[gameId].actionBlock != empty(uint256), "not active"
   assert self.games[gameId].actionIndex == _seatIndex, "wrong turn"
@@ -219,8 +219,7 @@ def dealNextRound(_tableId: uint256):
     T.numPlayers(_tableId), gameId, self.games[gameId].dealer)
   if self.games[gameId].actionIndex == self.games[gameId].dealer:
     # all live players all-in this round
-    # TODO: set next cards to reveal (similar to afterAct)
-    pass
+    self.drawNextCard(_tableId, gameId)
   else:
     self.games[gameId].minRaise = unsafe_mul(2, self.smallBlind(_tableId))
     self.games[gameId].betIndex = self.games[gameId].actionIndex
@@ -235,6 +234,11 @@ def actTimeout(_tableId: uint256):
                          T.actBlocks(_tableId)), "deadline not passed"
   self.games[gameId].liveUntil[self.games[gameId].actionIndex] = 0
   self.afterAct(_tableId, gameId, self.games[gameId].actionIndex)
+
+@external
+def showCards(_tableId: uint256, _seatIndex: uint256):
+  gameId: uint256 = self.validateTurn(_tableId, _seatIndex, Phase_SHOW)
+  # TODO
 
 @internal
 def collectPots(_numPlayers: uint256, _gameId: uint256):
@@ -296,6 +300,29 @@ def playersLeft(_numPlayers: uint256, _gameId: uint256) -> uint256:
   return playersLeft
 
 @internal
+def gameOver(_numPlayers: uint256, _tableId: uint256, _gameId: uint256):
+  # everyone gets their stack + bond
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == _numPlayers:
+      break
+    T.refundPlayer(_tableId, seatIndex, self.games[_gameId].stack[seatIndex])
+  # delete the game
+  self.games[_gameId] = empty(Game)
+  T.deleteTable(_tableId)
+
+@internal
+def drawNextCard(_tableId: uint256, _gameId: uint256):
+  T.burnCard(_tableId)
+  if self.games[_gameId].board[0] == empty(uint256): # flop
+    for boardIndex in range(3):
+      self.drawToBoard(_tableId, _gameId, boardIndex)
+  elif self.games[_gameId].board[3] == empty(uint256): # turn
+    self.drawToBoard(_tableId, _gameId, 3)
+  else: # river
+    self.drawToBoard(_tableId, _gameId, 4)
+  T.startDeal(_tableId)
+
+@internal
 def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
   self.games[_gameId].actionIndex = self.roundNextActor(_tableId, _gameId, _seatIndex)
   if self.games[_gameId].actionIndex == self.games[_gameId].betIndex:
@@ -305,40 +332,36 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
     self.collectPots(numPlayers, _gameId)
     # settle uncontested pots
     numContested: uint256 = self.settleUncontested(numPlayers, _gameId)
-    if numContested == 0:
-      # round is over
+    if numContested == 0: # hand is over
       if self.playersLeft(numPlayers, _gameId) <= T.maxPlayers(_tableId):
-        # game is over
-        # everyone gets their stack
-        # and refund all bonds
-        for seatIndex in range(MAX_SEATS):
-          if seatIndex == numPlayers:
-            break
-          T.refundPlayer(_tableId, seatIndex, self.games[_gameId].stack[seatIndex])
-        # delete the game
-        self.games[_gameId] = empty(Game)
-        T.deleteTable(_tableId)
+        self.gameOver(numPlayers, _tableId, _gameId)
       else:
-        # prepare new shuffle for next hand
         T.reshuffle(_tableId)
     elif self.games[_gameId].board[4] == empty(uint256):
-      # there are board cards to come: deal the next one
-      cardIndex: uint256 = empty(uint256)
-      T.burnCard(_tableId)
-      if self.games[_gameId].board[0] == empty(uint256): # flop
-        for boardIndex in range(3):
-          self.drawToBoard(_tableId, _gameId, boardIndex)
-      elif self.games[_gameId].board[3] == empty(uint256): # turn
-        self.drawToBoard(_tableId, _gameId, 3)
-      else: # river
-        self.drawToBoard(_tableId, _gameId, 4)
-      T.startDeal(_tableId)
+      self.drawNextCard(_tableId, _gameId)
     else:
-      pass
       # showdown to settle remaining pots
-      # each remaining player shows cards or mucks (+ folds) in turn
-      # all remaining players compete for best hands
-      # best hands split the pot
+      T.startShow(_tableId)
+      # advance actionIndex till the first player in the rightmost pot
+      potIndex: uint256 = 0
+      for _ in range(MAX_SEATS):
+        nextPotIndex: uint256 = unsafe_add(potIndex, 1)
+        if self.games[_gameId].pot[nextPotIndex] == 0:
+          break
+        else:
+          potIndex = nextPotIndex
+      for _ in range(MAX_SEATS):
+        if potIndex < self.games[_gameId].liveUntil[
+                        self.games[_gameId].actionIndex]:
+          break
+        else:
+          self.games[_gameId].actionIndex = uint256_addmod(
+            self.games[_gameId].actionIndex, 1, numPlayers)
+      self.games[_gameId].actionBlock = block.number
+      # allowed actions in phase: show, foldshow, foldmuck
+      # when we get back around to betIndex, decide that pot
+      # continue until no pots are left
+      # check if game is over (similar to above)
   else:
     # a player is still left to act in this round
     # pass action to them and set new actionBlock
@@ -349,66 +372,6 @@ def drawToBoard(_tableId: uint256, _gameId: uint256, _boardIndex: uint256):
   cardIndex: uint256 = T.dealTo(_tableId, self.games[_gameId].betIndex)
   T.showCard(_tableId, cardIndex)
   self.games[_gameId].board[_boardIndex] = PENDING_REVEAL
-
-#@internal
-#def actNext(_tableId: uint256, _seatIndex: uint256):
-#  # check if the round is complete
-#  if self.tables[_tableId].hand.actionIndex == self.tables[_tableId].hand.betIndex:
-#    # collect pot
-#    for seatIndex in range(MAX_SEATS):
-#      if seatIndex == self.tables[_tableId].config.startsWith:
-#        break
-#      self.tables[_tableId].hand.pot += self.tables[_tableId].hand.bet[seatIndex]
-#      self.tables[_tableId].hand.bet[seatIndex] = 0
-#    if self.tables[_tableId].hand.board[4] != empty(uint256):
-#      # check if
-#    else:
-#      # burn card
-#      self.tables[_tableId].hand.deckIndex = unsafe_add(self.tables[_tableId].hand.deckIndex, 1)
-#      # reveal next round's card(s)
-#      if self.tables[_tableId].hand.board[0] == empty(uint256): # flop
-#        for boardIndex in range(3): self.drawToBoard(_tableId, boardIndex)
-#      elif self.tables[_tableId].hand.board[3] == empty(uint256): # turn
-#        self.drawToBoard(_tableId, 3)
-#      else: # river
-#        self.drawToBoard(_tableId, 4)
-#      self.tables[_tableId].hand.actionBlock = empty(uint256)
-#      self.tables[_tableId].phase = Phase_DEAL
-#      self.tables[_tableId].commitBlock = block.number
-#  else:
-#    # TODO: handle next player being all-in
-#    self.tables[_tableId].hand.actionBlock = block.number
-#
-#@internal
-#def foldNext(_tableId: uint256, _seatIndex: uint256):
-#  self.tables[_tableId].hand.actionIndex = self.nextPlayer(_tableId, _seatIndex, False)
-#  self.tables[_tableId].hand.live[_seatIndex] = False
-#  if self.tables[_tableId].hand.actionIndex == self.tables[_tableId]
-#       _tableId, self.tables[_tableId].hand.actionIndex):
-#    # actionIndex wins the round as last player standing
-#    # give the winner the pot
-#    self.tables[_tableId].stacks[
-#      self.tables[_tableId].hand.actionIndex] += self.tables[_tableId].hand.pot
-#    self.tables[_tableId].hand.pot = 0
-#    # (eliminate any all-in players -- impossible as only winner left standing)
-#    # (check if untilLeft is reached -- impossible as nobody was eliminated)
-#    # progress the dealer
-#    for seatIndex in range(MAX_SEATS):
-#      if seatIndex == self.tables[_tableId].config.startsWith:
-#        break
-#      self.tables[_tableId].hand.live[seatIndex] = self.tables[_tableId].stacks[seatIndex] > 0
-#    self.tables[_tableId].hand.dealer = self.nextPlayer(
-#      _tableId, self.tables[_tableId].hand.dealer)
-#    # clear board and reshuffle
-#    self.tables[_tableId].hand.actionBlock = empty(uint256)
-#    self.tables[_tableId].hand.board = empty(uint256[5])
-#    self.tables[_tableId].requirement = empty(uint256[26])
-#    self.tables[_tableId].hand.deckIndex = 0
-#    self.tables[_tableId].deck.resetShuffle(self.tables[_tableId].deckId)
-#    self.tables[_tableId].phase = Phase_SHUFFLE
-#    self.autoShuffle(_tableId)
-#  else:
-#    self.tables[_tableId].hand.actionBlock = block.number
 
 @internal
 @view

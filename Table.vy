@@ -416,6 +416,13 @@ def burnCard(_tableId: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   self.tables[_tableId].deckIndex = unsafe_add(self.tables[_tableId].deckIndex, 1)
 
+# showdown
+
+@external
+def startShow(_tableId: uint256):
+  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.tables[_tableId].phase = Phase_SHOW
+
 # view info
 
 @external
