@@ -51,10 +51,9 @@ def confirmChangePlayerAddress(_playerId: uint256):
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament structure
 
-Req_DECK: constant(uint256) = 0 # not drawn
-Req_HAND: constant(uint256) = 1 # drawn to hand
-Req_MUCK: constant(uint256) = 2 # may be revealed, not required
-Req_SHOW: constant(uint256) = 3 # must be shown
+Req_DECK: constant(uint256) = 0 # must be hidden by all
+Req_HAND: constant(uint256) = 1 # must be hidden by owner and shown by others
+Req_SHOW: constant(uint256) = 2 # must be shown by all
 
 # not using Vyper enum because of this bug
 # https://github.com/vyperlang/vyper/pull/3196/files#r1062141796
@@ -87,6 +86,7 @@ struct Table:
   deck:        DeckManager          # deck contract
   deckId:      uint256              # id of deck in deck contract
   phase:       uint256
+  nextPhase:   uint256              # phase to enter after deal
   present:     bool[9]              # whether each player contributes to the current shuffle
   gameId:      uint256              # id of game in game contract
   commitBlock: uint256              # block from which new commitments were required
@@ -364,7 +364,7 @@ def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
   assert self.tables[_tableId].drawIndex[_cardIndex] == _seatIndex, "wrong player"
-  assert self.tables[_tableId].requirement[_cardIndex] >= Req_MUCK, "decrypt not allowed"
+  assert self.tables[_tableId].requirement[_cardIndex] == Req_SHOW, "reveal not allowed"
   self.tables[_tableId].deck.openCard(
     self.tables[_tableId].deckId, _seatIndex, _cardIndex, _openIndex, _proof)
 
@@ -387,11 +387,12 @@ def endDeal(_tableId: uint256):
   assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
   assert self.checkRevelations(_tableId), "revelations missing"
-  self.tables[_tableId].phase = Phase_PLAY
+  self.tables[_tableId].phase = self.tables[_tableId].nextPhase
 
 @external
 def startDeal(_tableId: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.tables[_tableId].nextPhase = self.tables[_tableId].phase
   self.tables[_tableId].phase = Phase_DEAL
   self.tables[_tableId].commitBlock = block.number
 

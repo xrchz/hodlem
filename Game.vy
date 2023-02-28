@@ -50,7 +50,7 @@ Phase_PREP:    constant(uint256) = 1 # all players seated, preparing the deck
 Phase_SHUFFLE: constant(uint256) = 2 # submitting shuffles and verifications in order
 Phase_DEAL:    constant(uint256) = 3 # drawing and possibly opening cards as currently required
 Phase_PLAY:    constant(uint256) = 4 # betting; new card revelations may become required
-Phase_SHOW:    constant(uint256) = 5 # showdown TODO
+Phase_SHOW:    constant(uint256) = 5 # showdown; new card revelations may become required
 # end copy
 import Table as TableManager
 
@@ -67,6 +67,7 @@ struct Game:
   startBlock:  uint256            # block number when game started
   stack:       uint256[MAX_SEATS] # stack at each seat (zero for eliminated or all-in players)
   dealer:      uint256            # seat index of current dealer
+  hands:       uint256[2][MAX_SEATS] # deck indices of hole cards for each player
   board:       uint256[5]         # board cards
   bet:         uint256[MAX_SEATS] # current round bet of each player
   betIndex:    uint256            # seat index of player who introduced the current bet
@@ -110,10 +111,10 @@ def dealHoleCards(_tableId: uint256):
   numPlayers: uint256 = T.numPlayers(_tableId)
   seatIndex: uint256 = self.games[gameId].dealer
   self.games[gameId].betIndex = seatIndex
-  for __ in range(2):
+  for i in range(2):
     for _ in range(MAX_SEATS):
       seatIndex = self.roundNextActor(numPlayers, gameId, seatIndex)
-      T.dealTo(_tableId, seatIndex)
+      self.games[gameId].hands[seatIndex][i] = T.dealTo(_tableId, seatIndex)
       if seatIndex == self.games[gameId].dealer:
         break
   T.startDeal(_tableId)
@@ -238,7 +239,31 @@ def actTimeout(_tableId: uint256):
 @external
 def showCards(_tableId: uint256, _seatIndex: uint256):
   gameId: uint256 = self.validateTurn(_tableId, _seatIndex, Phase_SHOW)
-  # TODO
+  T.showCard(_tableId, self.games[gameId].hands[_seatIndex][0])
+  T.showCard(_tableId, self.games[gameId].hands[_seatIndex][1])
+  T.startDeal(_tableId)
+
+@external
+def foldCards(_tableId: uint256, _seatIndex: uint256):
+  gameId: uint256 = self.validateTurn(_tableId, _seatIndex, Phase_SHOW)
+  self.games[gameId].liveUntil[_seatIndex] = 0
+
+@external
+def endShow(_tableId: uint256):
+  assert T.authorised(_tableId, Phase_SHOW)
+  gameId: uint256 = T.gameId(_tableId)
+  seatIndex: uint256 = self.games[gameId].actionIndex
+  assert (self.games[gameId].liveUntil[seatIndex] == 0 or
+    (T.cardAt(_tableId, self.games[gameId].hands[seatIndex][0]) != empty(uint256) and
+     T.cardAt(_tableId, self.games[gameId].hands[seatIndex][1]) != empty(uint256))), "action required"
+  # TODO: cache the rightmostPot?
+  self.games[gameId].actionIndex = self.nextInPot(
+    T.numPlayers(_tableId), gameId, self.rightmostPot(gameId), seatIndex)
+  if self.games[gameId].actionIndex == self.games[gameId].betIndex:
+    # decide this pot
+    pass
+  else:
+    self.games[gameId].actionBlock = block.number
 
 @internal
 def collectPots(_numPlayers: uint256, _gameId: uint256):
@@ -343,22 +368,10 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
       # showdown to settle remaining pots
       T.startShow(_tableId)
       # advance actionIndex till the first player in the rightmost pot
-      potIndex: uint256 = 0
-      for _ in range(MAX_SEATS):
-        nextPotIndex: uint256 = unsafe_add(potIndex, 1)
-        if self.games[_gameId].pot[nextPotIndex] == 0:
-          break
-        else:
-          potIndex = nextPotIndex
-      for _ in range(MAX_SEATS):
-        if potIndex < self.games[_gameId].liveUntil[
-                        self.games[_gameId].actionIndex]:
-          break
-        else:
-          self.games[_gameId].actionIndex = uint256_addmod(
-            self.games[_gameId].actionIndex, 1, numPlayers)
+      potIndex: uint256 = self.rightmostPot(_gameId)
+      self.games[_gameId].actionIndex = self.nextInPot(
+        numPlayers, _gameId, potIndex, _seatIndex)
       self.games[_gameId].actionBlock = block.number
-      # allowed actions in phase: show, foldshow, foldmuck
       # when we get back around to betIndex, decide that pot
       # continue until no pots are left
       # check if game is over (similar to above)
@@ -368,10 +381,33 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
     self.games[_gameId].actionBlock = block.number
 
 @internal
+@view
+def rightmostPot(gameId: uint256) -> uint256:
+  potIndex: uint256 = 0
+  for _ in range(MAX_SEATS):
+    nextPotIndex: uint256 = unsafe_add(potIndex, 1)
+    if self.games[gameId].pot[nextPotIndex] == 0:
+      break
+    else:
+      potIndex = nextPotIndex
+  return potIndex
+
+@internal
 def drawToBoard(_tableId: uint256, _gameId: uint256, _boardIndex: uint256):
   cardIndex: uint256 = T.dealTo(_tableId, self.games[_gameId].betIndex)
   T.showCard(_tableId, cardIndex)
   self.games[_gameId].board[_boardIndex] = PENDING_REVEAL
+
+@internal
+@view
+def nextInPot(_numPlayers: uint256, _gameId: uint256, _potIndex: uint256, _seatIndex: uint256) -> uint256:
+  nextIndex: uint256 = _seatIndex
+  for _ in range(MAX_SEATS):
+    nextIndex = uint256_addmod(nextIndex, 1, _numPlayers)
+    if (_potIndex < self.games[_gameId].liveUntil[nextIndex] or
+        nextIndex == self.games[_gameId].betIndex):
+      return nextIndex
+  raise "betIndex not found"
 
 @internal
 @view
