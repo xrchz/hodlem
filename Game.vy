@@ -283,8 +283,32 @@ def endShow(_tableId: uint256):
         winners = [contestantIndex]
       elif bestHandRank == handRank:
         winners.append(contestantIndex)
-    # TODO: divide pot amongst winners
-    # TODO: check for end of game etc.
+    potIndex: uint256 = self.games[gameId].potIndex
+    share: uint256 = unsafe_div(self.games[gameId].pot[potIndex], len(winners))
+    for winnerIndex in winners:
+      self.games[gameId].pot[potIndex] = unsafe_sub(self.games[gameId].pot[potIndex], share)
+      self.games[gameId].stack[winnerIndex] = unsafe_add(self.games[gameId].stack[winnerIndex], share)
+      self.games[gameId].liveUntil[winnerIndex] = unsafe_sub(self.games[gameId].liveUntil[winnerIndex], 1)
+    # odd chip(s) to be distributed according to overall card rank
+    if self.games[gameId].pot[potIndex] != 0:
+      for negCard in range(52):
+        card: uint256 = unsafe_sub(52, negCard)
+        for winnerIndex in winners:
+          if (T.cardAt(_tableId, self.games[gameId].hands[winnerIndex][0]) == card or
+              T.cardAt(_tableId, self.games[gameId].hands[winnerIndex][1]) == card):
+            self.games[gameId].pot[potIndex] = unsafe_sub(self.games[gameId].pot[potIndex], 1)
+            self.games[gameId].stack[winnerIndex] = unsafe_add(self.games[gameId].stack[winnerIndex], 1)
+            if self.games[gameId].pot[potIndex] == 0:
+              break
+        if self.games[gameId].pot[potIndex] == 0:
+          break
+    if potIndex != 0:
+      self.games[gameId].potIndex = unsafe_sub(potIndex, 1)
+      # TODO: set up for deciding next pot
+    elif self.playersLeft(numPlayers, gameId) <= T.maxPlayers(_tableId):
+      self.gameOver(numPlayers, _tableId, gameId)
+    else:
+      T.reshuffle(_tableId)
   else:
     self.games[gameId].actionBlock = block.number
 
