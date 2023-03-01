@@ -25,6 +25,7 @@ struct DeckPrep:
   cards: DynArray[CB, MAX_SIZE]
 # end of copy
 import Deck as DeckManager
+import Rank as RankManager
 
 # copied from Table.vy
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
@@ -55,10 +56,12 @@ Phase_SHOW:    constant(uint256) = 5 # showdown; new card revelations may become
 import Table as TableManager
 
 T: immutable(TableManager)
+R: immutable(RankManager)
 
 @external
-def __init__(tableAddress: address):
+def __init__(tableAddress: address, rankAddress: address):
   T = TableManager(tableAddress)
+  R = RankManager(rankAddress)
 
 # TODO: add rake (rewards tabs for progress txns)?
 # TODO: add penalties (instead of full abort on failure)?
@@ -74,6 +77,7 @@ struct Game:
   minRaise:    uint256            # size of the minimum raise
   liveUntil:   uint256[MAX_SEATS] # index of first pot player is not live in
   pot:         uint256[MAX_SEATS] # pot and side pots
+  potIndex:    uint256            # index of pot being decided in showdown
   actionIndex: uint256            # seat index of currently active player
   actionBlock: uint256            # block from which action was on the active player
 
@@ -256,12 +260,31 @@ def endShow(_tableId: uint256):
   assert (self.games[gameId].liveUntil[seatIndex] == 0 or
     (T.cardAt(_tableId, self.games[gameId].hands[seatIndex][0]) != empty(uint256) and
      T.cardAt(_tableId, self.games[gameId].hands[seatIndex][1]) != empty(uint256))), "action required"
-  # TODO: cache the rightmostPot?
-  self.games[gameId].actionIndex = self.nextInPot(
-    T.numPlayers(_tableId), gameId, self.rightmostPot(gameId), seatIndex)
+  numPlayers: uint256 = T.numPlayers(_tableId)
+  self.games[gameId].actionIndex = self.nextInPot(numPlayers, gameId, seatIndex)
   if self.games[gameId].actionIndex == self.games[gameId].betIndex:
-    # decide this pot
-    pass
+    bestHandRank: uint256 = 0
+    hand: uint256[7] = [self.games[gameId].board[0],
+                        self.games[gameId].board[1],
+                        self.games[gameId].board[2],
+                        self.games[gameId].board[3],
+                        self.games[gameId].board[4],
+                        0, 0]
+    winners: DynArray[uint256, MAX_SEATS] = []
+    for contestantIndex in range(MAX_SEATS):
+      if contestantIndex == numPlayers:
+        break
+      if self.games[gameId].liveUntil[contestantIndex] <= self.games[gameId].potIndex:
+        continue
+      hand[5] = T.cardAt(_tableId, self.games[gameId].hands[contestantIndex][0])
+      hand[6] = T.cardAt(_tableId, self.games[gameId].hands[contestantIndex][1])
+      handRank: uint256 = R.bestHandRank(hand)
+      if bestHandRank < handRank:
+        winners = [contestantIndex]
+      elif bestHandRank == handRank:
+        winners.append(contestantIndex)
+    # TODO: divide pot amongst winners
+    # TODO: check for end of game etc.
   else:
     self.games[gameId].actionBlock = block.number
 
@@ -368,9 +391,8 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
       # showdown to settle remaining pots
       T.startShow(_tableId)
       # advance actionIndex till the first player in the rightmost pot
-      potIndex: uint256 = self.rightmostPot(_gameId)
-      self.games[_gameId].actionIndex = self.nextInPot(
-        numPlayers, _gameId, potIndex, _seatIndex)
+      self.games[_gameId].potIndex = self.rightmostPot(_gameId)
+      self.games[_gameId].actionIndex = self.nextInPot(numPlayers, _gameId, _seatIndex)
       self.games[_gameId].actionBlock = block.number
       # when we get back around to betIndex, decide that pot
       # continue until no pots are left
@@ -400,11 +422,11 @@ def drawToBoard(_tableId: uint256, _gameId: uint256, _boardIndex: uint256):
 
 @internal
 @view
-def nextInPot(_numPlayers: uint256, _gameId: uint256, _potIndex: uint256, _seatIndex: uint256) -> uint256:
+def nextInPot(_numPlayers: uint256, _gameId: uint256, _seatIndex: uint256) -> uint256:
   nextIndex: uint256 = _seatIndex
   for _ in range(MAX_SEATS):
     nextIndex = uint256_addmod(nextIndex, 1, _numPlayers)
-    if (_potIndex < self.games[_gameId].liveUntil[nextIndex] or
+    if (self.games[_gameId].potIndex < self.games[_gameId].liveUntil[nextIndex] or
         nextIndex == self.games[_gameId].betIndex):
       return nextIndex
   raise "betIndex not found"
