@@ -310,6 +310,7 @@ def autoShuffle(_tableId: uint256):
 @internal
 def finishShuffle(_tableId: uint256):
   self.tables[_tableId].phase = Phase_DEAL
+  self.tables[_tableId].nextPhase = Phase_PLAY
   for cardIndex in range(26):
     if self.tables[_tableId].requirement[cardIndex] != Req_DECK:
       self.tables[_tableId].deck.drawCard(

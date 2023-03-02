@@ -304,7 +304,9 @@ def endShow(_tableId: uint256):
           break
     if potIndex != 0:
       self.games[gameId].potIndex = unsafe_sub(potIndex, 1)
-      # TODO: set up for deciding next pot
+      if self.games[gameId].liveUntil[self.games[gameId].actionIndex] <= self.games[gameId].potIndex:
+        self.games[gameId].actionIndex = self.nextInPot(numPlayers, gameId, self.games[gameId].actionIndex)
+      self.games[gameId].actionBlock = block.number
     elif self.playersLeft(numPlayers, gameId) <= T.maxPlayers(_tableId):
       self.gameOver(numPlayers, _tableId, gameId)
     else:
@@ -416,11 +418,9 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
       T.startShow(_tableId)
       # advance actionIndex till the first player in the rightmost pot
       self.games[_gameId].potIndex = self.rightmostPot(_gameId)
-      self.games[_gameId].actionIndex = self.nextInPot(numPlayers, _gameId, _seatIndex)
+      if self.games[_gameId].liveUntil[self.games[_gameId].actionIndex] <= self.games[_gameId].potIndex:
+        self.games[_gameId].actionIndex = self.nextInPot(numPlayers, _gameId, self.games[_gameId].actionIndex)
       self.games[_gameId].actionBlock = block.number
-      # when we get back around to betIndex, decide that pot
-      # continue until no pots are left
-      # check if game is over (similar to above)
   else:
     # a player is still left to act in this round
     # pass action to them and set new actionBlock
