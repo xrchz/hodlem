@@ -1,7 +1,7 @@
 # @version ^0.3.8
 
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
-MAX_SIZE: constant(uint256) = 9000
+MAX_SIZE: constant(uint256) = 2000
 MAX_SECURITY: constant(uint256) = 256
 
 struct Proof:
@@ -20,7 +20,7 @@ struct CP:
   p: Proof
 
 struct DeckPrep:
-  cards: DynArray[CP, 9000]
+  cards: DynArray[CP, 2000]
 # end of copy
 import Deck as DeckManager
 
@@ -266,8 +266,8 @@ def finishDeckPrep(_tableId: uint256):
 
 @external
 def submitShuffle(_tableId: uint256, _seatIndex: uint256,
-                  _shuffle: DynArray[uint256[2], 9000],
-                  _commitment: DynArray[DynArray[uint256[2], 9000], 256]) -> uint256:
+                  _shuffle: DynArray[uint256[2], 2000],
+                  _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256:
   assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
@@ -281,7 +281,7 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
 @external
 def submitVerif(_tableId: uint256, _seatIndex: uint256,
                 _scalars: DynArray[uint256, 256],
-                _permutations: DynArray[DynArray[uint256, 9000], 256]):
+                _permutations: DynArray[DynArray[uint256, 2000], 256]):
   assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"

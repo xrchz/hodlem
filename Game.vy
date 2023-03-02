@@ -2,8 +2,8 @@
 # no-limit hold'em sit-n-go single-table tournaments
 
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
-MAX_SIZE: constant(uint256) = 9000
-MAX_PLAYERS: constant(uint256) = 8000 # to distinguish from MAX_SIZE when inlining
+MAX_SIZE: constant(uint256) = 2000
+MAX_PLAYERS: constant(uint256) = 1000 # to distinguish from MAX_SIZE when inlining
 MAX_SECURITY: constant(uint256) = 256
 
 struct Proof:
