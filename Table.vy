@@ -26,9 +26,9 @@ import Deck as DeckManager
 
 # player registry
 
-nextPlayerId: public(uint256)
-playerAddress: public(HashMap[uint256, address])
-pendingPlayerAddress: public(HashMap[uint256, address])
+playerAddress: HashMap[uint256, address]
+pendingPlayerAddress: HashMap[uint256, address]
+nextPlayerId: uint256
 
 @external
 def register() -> uint256:
@@ -62,7 +62,7 @@ Phase_PREP:    constant(uint256) = 1 # all players seated, preparing the deck
 Phase_SHUFFLE: constant(uint256) = 2 # submitting shuffles and verifications in order
 Phase_DEAL:    constant(uint256) = 3 # drawing and possibly opening cards as currently required
 Phase_PLAY:    constant(uint256) = 4 # betting; new card revelations may become required
-Phase_SHOW:    constant(uint256) = 5 # showdown TODO
+Phase_SHOW:    constant(uint256) = 5 # showdown; new card revelations may become required
 
 struct Config:
   gameAddress: address             # address of game manager
@@ -94,79 +94,65 @@ struct Table:
   drawIndex:   uint256[26]          # player the card is drawn to
   requirement: uint256[26]          # revelation requirement level
 
-nextTableId: public(uint256)
 tables: HashMap[uint256, Table]
+nextTableId: uint256
+
+lobbyAddress: immutable(address)
 
 @external
-def __init__():
+def __init__(_lobbyAddress: address):
   self.nextPlayerId = 1
   self.nextTableId = 1
+  lobbyAddress = _lobbyAddress
 
 # lobby
 
 @external
 @payable
 def createTable(_playerId: uint256, _seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
-  assert 1 < _config.startsWith, "invalid startsWith"
-  assert _config.startsWith <= MAX_SEATS, "invalid startsWith"
-  assert _config.untilLeft < _config.startsWith, "invalid untilLeft"
-  assert 0 < _config.untilLeft, "invalid untilLeft"
-  assert 0 < _config.structure[0], "invalid structure"
-  assert 0 < _config.buyIn, "invalid buyIn"
-  assert _seatIndex < _config.startsWith, "invalid seatIndex"
-  assert msg.value == _config.bond + _config.buyIn, "incorrect bond + buyIn"
   tableId: uint256 = self.nextTableId
-  self.tables[tableId].tableId = tableId
-  self.tables[tableId].deck = DeckManager(_deckAddr)
-  self.tables[tableId].deckId = self.tables[tableId].deck.newDeck(52, _config.startsWith)
-  self.tables[tableId].phase = Phase_JOIN
-  self.tables[tableId].config = _config
-  self.tables[tableId].seats[_seatIndex] = _playerId
-  self.nextTableId = unsafe_add(tableId, 1)
+  raw_call(
+    lobbyAddress,
+    _abi_encode(_playerId, tableId, _seatIndex, _config, _deckAddr,
+                method_id=method_id("new(uint256,uint256,uint256,Config,address)")),
+    is_delegate_call=True)
   return tableId
 
 @external
 @payable
 def joinTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint256):
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
-  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
-  assert self.tables[_tableId].seats[_seatIndex] == empty(uint256), "seatIndex unavailable"
-  assert msg.value == self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn, "incorrect bond + buyIn"
-  self.tables[_tableId].seats[_seatIndex] = _playerId
+  raw_call(
+    lobbyAddress,
+    _abi_encode(_playerId, _tableId, _seatIndex, method_id=method_id("join(uint256,uint256,uint256)")),
+    is_delegate_call=True)
 
 @external
 def leaveTable(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
-  self.tables[_tableId].seats[_seatIndex] = empty(uint256)
-  send(msg.sender, self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn)
+  raw_call(
+    lobbyAddress,
+    _abi_encode(_tableId, _seatIndex, method_id=method_id("leave(uint256,uint256)")),
+    is_delegate_call=True)
 
 @external
 def startGame(_tableId: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
-  for seatIndex in range(MAX_SEATS):
-    if seatIndex == self.tables[_tableId].config.startsWith:
-      break
-    assert self.tables[_tableId].seats[seatIndex] != empty(uint256), "not enough players"
-    self.tables[_tableId].present[seatIndex] = True
-  self.tables[_tableId].phase = Phase_PREP
-  self.tables[_tableId].commitBlock = block.number
+  raw_call(
+    lobbyAddress,
+    _abi_encode(_tableId, method_id=method_id("start(uint256)")),
+    is_delegate_call=True)
 
 @external
 def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
-  send(self.playerAddress[self.tables[_tableId].seats[_seatIndex]],
-       unsafe_add(self.tables[_tableId].config.bond, _stack))
+  raw_call(
+    lobbyAddress,
+    _abi_encode(_tableId, _seatIndex, _stack, method_id=method_id("refund(uint256,uint256,uint256)")),
+    is_delegate_call=True)
 
 @external
 def deleteTable(_tableId: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
-  self.tables[_tableId] = empty(Table)
+  raw_call(
+    lobbyAddress,
+    _abi_encode(_tableId, method_id=method_id("delete(uint256)")),
+    is_delegate_call=True)
 
 # timeouts
 
