@@ -36,12 +36,12 @@ MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament str
 
 # not using Vyper enum because of this bug
 # https://github.com/vyperlang/vyper/pull/3196/files#r1062141796
-Phase_JOIN:    constant(uint256) = 0 # before the game has started, taking seats
-Phase_PREP:    constant(uint256) = 1 # all players seated, preparing the deck
-Phase_SHUFFLE: constant(uint256) = 2 # submitting shuffles and verifications in order
-Phase_DEAL:    constant(uint256) = 3 # drawing and possibly opening cards as currently required
-Phase_PLAY:    constant(uint256) = 4 # betting; new card revelations may become required
-Phase_SHOW:    constant(uint256) = 5 # showdown; new card revelations may become required
+Phase_JOIN:    constant(uint256) = 1 # before the game has started, taking seats
+Phase_PREP:    constant(uint256) = 2 # all players seated, preparing the deck
+Phase_SHUFFLE: constant(uint256) = 3 # submitting shuffles and verifications in order
+Phase_DEAL:    constant(uint256) = 4 # drawing and possibly opening cards as currently required
+Phase_PLAY:    constant(uint256) = 5 # betting; new card revelations may become required
+Phase_SHOW:    constant(uint256) = 6 # showdown; new card revelations may become required
 
 struct Config:
   gameAddress: address             # address of game manager
@@ -59,7 +59,6 @@ struct Config:
   actBlocks:   uint256             # blocks to act before folding can be triggered
 
 struct Table:
-  tableId:     uint256
   config:      Config
   seats:       uint256[9]           # playerIds in seats as at the start of the game
   deck:        DeckManager          # deck contract
@@ -90,7 +89,6 @@ def new(_playerId: uint256, _tableId: uint256, _seatIndex: uint256, _config: Con
   assert 0 < _config.buyIn, "invalid buyIn"
   assert _seatIndex < _config.startsWith, "invalid seatIndex"
   assert msg.value == _config.bond + _config.buyIn, "incorrect bond + buyIn"
-  self.tables[_tableId].tableId = _tableId
   self.tables[_tableId].deck = DeckManager(_deckAddr)
   self.tables[_tableId].deckId = self.tables[_tableId].deck.newDeck(52, _config.startsWith)
   self.tables[_tableId].phase = Phase_JOIN
@@ -102,7 +100,6 @@ def new(_playerId: uint256, _tableId: uint256, _seatIndex: uint256, _config: Con
 @payable
 def join(_playerId: uint256, _tableId: uint256, _seatIndex: uint256):
   assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == empty(uint256), "seatIndex unavailable"
@@ -111,7 +108,6 @@ def join(_playerId: uint256, _tableId: uint256, _seatIndex: uint256):
 
 @external
 def leave(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   self.tables[_tableId].seats[_seatIndex] = empty(uint256)
@@ -119,7 +115,6 @@ def leave(_tableId: uint256, _seatIndex: uint256):
 
 @external
 def start(_tableId: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   for seatIndex in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:

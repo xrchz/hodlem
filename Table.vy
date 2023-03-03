@@ -57,12 +57,12 @@ Req_SHOW: constant(uint256) = 2 # must be shown by all
 
 # not using Vyper enum because of this bug
 # https://github.com/vyperlang/vyper/pull/3196/files#r1062141796
-Phase_JOIN:    constant(uint256) = 0 # before the game has started, taking seats
-Phase_PREP:    constant(uint256) = 1 # all players seated, preparing the deck
-Phase_SHUFFLE: constant(uint256) = 2 # submitting shuffles and verifications in order
-Phase_DEAL:    constant(uint256) = 3 # drawing and possibly opening cards as currently required
-Phase_PLAY:    constant(uint256) = 4 # betting; new card revelations may become required
-Phase_SHOW:    constant(uint256) = 5 # showdown; new card revelations may become required
+Phase_JOIN:    constant(uint256) = 1 # before the game has started, taking seats
+Phase_PREP:    constant(uint256) = 2 # all players seated, preparing the deck
+Phase_SHUFFLE: constant(uint256) = 3 # submitting shuffles and verifications in order
+Phase_DEAL:    constant(uint256) = 4 # drawing and possibly opening cards as currently required
+Phase_PLAY:    constant(uint256) = 5 # betting; new card revelations may become required
+Phase_SHOW:    constant(uint256) = 6 # showdown; new card revelations may become required
 
 struct Config:
   gameAddress: address             # address of game manager
@@ -80,7 +80,6 @@ struct Config:
   actBlocks:   uint256             # blocks to act before folding can be triggered
 
 struct Table:
-  tableId:     uint256
   config:      Config
   seats:       uint256[9]           # playerIds in seats as at the start of the game
   deck:        DeckManager          # deck contract
@@ -156,10 +155,14 @@ def deleteTable(_tableId: uint256):
 
 # timeouts
 
+@internal
+@view
+def validatePhase(_tableId: uint256, _phase: uint256):
+  assert self.tables[_tableId].phase == _phase, "wrong phase"
+
 @external
 def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_PREP, "wrong phase"
+  self.validatePhase(_tableId, Phase_PREP)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.prepBlocks), "deadline not passed"
   assert not self.tables[_tableId].deck.hasSubmittedPrep(
@@ -168,8 +171,7 @@ def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
 
 @external
 def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
+  self.validatePhase(_tableId, Phase_SHUFFLE)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.shuffBlocks), "deadline not passed"
   assert self.tables[_tableId].deck.shuffleCount(
@@ -178,8 +180,7 @@ def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
 
 @external
 def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
+  self.validatePhase(_tableId, Phase_SHUFFLE)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.verifBlocks), "deadline not passed"
   assert self.tables[_tableId].deck.shuffleCount(
@@ -190,8 +191,7 @@ def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
 
 @external
 def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
+  self.validatePhase(_tableId, Phase_DEAL)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.dealBlocks), "deadline not passed"
   assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "not required"
@@ -201,8 +201,7 @@ def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
 
 @external
 def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
+  self.validatePhase(_tableId, Phase_DEAL)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.dealBlocks), "deadline not passed"
   assert self.tables[_tableId].drawIndex[_cardIndex] == _seatIndex, "wrong player"
@@ -228,15 +227,13 @@ def failChallenge(_tableId: uint256, _challIndex: uint256):
 
 @external
 def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DeckPrep):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  self.validatePhase(_tableId, Phase_PREP)
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].phase == Phase_PREP, "wrong phase"
   self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _deckPrep)
 
 @external
 def finishDeckPrep(_tableId: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_PREP, "wrong phase"
+  self.validatePhase(_tableId, Phase_PREP)
   failIndex: uint256 = self.tables[_tableId].deck.finishPrep(self.tables[_tableId].deckId)
   if failIndex == self.tables[_tableId].config.startsWith:
     for cardIndex in range(MAX_SEATS):
@@ -254,9 +251,8 @@ def finishDeckPrep(_tableId: uint256):
 def submitShuffle(_tableId: uint256, _seatIndex: uint256,
                   _shuffle: DynArray[uint256[2], 2000],
                   _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256:
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  self.validatePhase(_tableId, Phase_SHUFFLE)
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
   self.tables[_tableId].deck.submitShuffle(self.tables[_tableId].deckId, _seatIndex, _shuffle)
   self.tables[_tableId].deck.challenge(
     self.tables[_tableId].deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
@@ -268,9 +264,8 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
 def submitVerif(_tableId: uint256, _seatIndex: uint256,
                 _scalars: DynArray[uint256, 256],
                 _permutations: DynArray[DynArray[uint256, 2000], 256]):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  self.validatePhase(_tableId, Phase_SHUFFLE)
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].phase == Phase_SHUFFLE, "wrong phase"
   self.tables[_tableId].deck.defuseChallenge(
     self.tables[_tableId].deckId, _seatIndex, _scalars, _permutations)
   self.autoShuffle(_tableId)
@@ -336,9 +331,8 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
 @external
 def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
                 _card: uint256[2], _proof: Proof):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  self.validatePhase(_tableId, Phase_DEAL)
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
   assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "decrypt not allowed"
   self.tables[_tableId].deck.decryptCard(
     self.tables[_tableId].deckId, _seatIndex, _cardIndex, _card, _proof)
@@ -347,9 +341,8 @@ def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
 @external
 def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
                _openIndex: uint256, _proof: Proof):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
+  self.validatePhase(_tableId, Phase_DEAL)
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
   assert self.tables[_tableId].drawIndex[_cardIndex] == _seatIndex, "wrong player"
   assert self.tables[_tableId].requirement[_cardIndex] == Req_SHOW, "reveal not allowed"
   self.tables[_tableId].deck.openCard(
@@ -371,8 +364,7 @@ def checkRevelations(_tableId: uint256) -> bool:
 
 @external
 def endDeal(_tableId: uint256):
-  assert self.tables[_tableId].tableId == _tableId, "invalid tableId"
-  assert self.tables[_tableId].phase == Phase_DEAL, "wrong phase"
+  self.validatePhase(_tableId, Phase_DEAL)
   assert self.checkRevelations(_tableId), "revelations missing"
   self.tables[_tableId].phase = self.tables[_tableId].nextPhase
 
@@ -418,8 +410,7 @@ def startShow(_tableId: uint256):
 def authorised(_tableId: uint256, _phase: uint256,
                _seatIndex: uint256 = empty(uint256),
                _address: address = empty(address)) -> bool:
-  return (self.tables[_tableId].tableId == _tableId and
-          self.tables[_tableId].phase == _phase and
+  return (self.tables[_tableId].phase == _phase and
           (_address == empty(address) or
            _address == self.playerAddress[
                          self.tables[_tableId].seats[_seatIndex]]))

@@ -46,12 +46,12 @@ struct Config:
   dealBlocks:  uint256             # blocks to submit card decryptions
   actBlocks:   uint256             # blocks to act before folding can be triggered
 
-Phase_JOIN:    constant(uint256) = 0 # before the game has started, taking seats
-Phase_PREP:    constant(uint256) = 1 # all players seated, preparing the deck
-Phase_SHUFFLE: constant(uint256) = 2 # submitting shuffles and verifications in order
-Phase_DEAL:    constant(uint256) = 3 # drawing and possibly opening cards as currently required
-Phase_PLAY:    constant(uint256) = 4 # betting; new card revelations may become required
-Phase_SHOW:    constant(uint256) = 5 # showdown; new card revelations may become required
+Phase_JOIN:    constant(uint256) = 1 # before the game has started, taking seats
+Phase_PREP:    constant(uint256) = 2 # all players seated, preparing the deck
+Phase_SHUFFLE: constant(uint256) = 3 # submitting shuffles and verifications in order
+Phase_DEAL:    constant(uint256) = 4 # drawing and possibly opening cards as currently required
+Phase_PLAY:    constant(uint256) = 5 # betting; new card revelations may become required
+Phase_SHOW:    constant(uint256) = 6 # showdown; new card revelations may become required
 # end copy
 import Table as TableManager
 
