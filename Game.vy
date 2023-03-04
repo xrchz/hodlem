@@ -1,6 +1,11 @@
 # @version ^0.3.8
 # no-limit hold'em sit-n-go single-table tournaments
 
+# TODO: add event logs
+# TODO: make a frontend
+# TODO: add rake (rewards tabs for progress txns)?
+# TODO: add penalties (instead of full abort on failure)?
+
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
 MAX_SIZE: constant(uint256) = 2000
 MAX_PLAYERS: constant(uint256) = 1000 # to distinguish from MAX_SIZE when inlining
@@ -62,9 +67,6 @@ R: immutable(RankManager)
 def __init__(tableAddress: address, rankAddress: address):
   T = TableManager(tableAddress)
   R = RankManager(rankAddress)
-
-# TODO: add rake (rewards tabs for progress txns)?
-# TODO: add penalties (instead of full abort on failure)?
 
 struct Game:
   startBlock:  uint256            # block number when game started

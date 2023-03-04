@@ -174,8 +174,7 @@ def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_SHUFFLE)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.shuffBlocks), "deadline not passed"
-  assert self.tables[_tableId].deck.shuffleCount(
-           self.tables[_tableId].deckId) == _seatIndex, "wrong player"
+  assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
   self.failChallenge(_tableId, _seatIndex)
 
 @external
@@ -183,8 +182,7 @@ def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_SHUFFLE)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.verifBlocks), "deadline not passed"
-  assert self.tables[_tableId].deck.shuffleCount(
-           self.tables[_tableId].deckId) == _seatIndex, "wrong player"
+  assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
   assert not self.tables[_tableId].deck.challengeActive(
     self.tables[_tableId].deckId, _seatIndex), "already verified"
   self.failChallenge(_tableId, _seatIndex)
@@ -195,8 +193,7 @@ def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.dealBlocks), "deadline not passed"
   assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "not required"
-  assert self.tables[_tableId].deck.decryptCount(
-    self.tables[_tableId].deckId, _cardIndex) == _seatIndex, "already decrypted"
+  assert self.decryptCount(_tableId, _cardIndex) == _seatIndex, "already decrypted"
   self.failChallenge(_tableId, _seatIndex)
 
 @external
@@ -212,7 +209,7 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
 
 @internal
 def failChallenge(_tableId: uint256, _challIndex: uint256):
-  perPlayer: uint256 = self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn
+  perPlayer: uint256 = unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn)
   # burn the offender's bond + buyIn
   send(empty(address), perPlayer)
   self.tables[_tableId].seats[_challIndex] = empty(uint256)
@@ -247,18 +244,22 @@ def finishDeckPrep(_tableId: uint256):
 
 # shuffle
 
+@internal
+@view
+def shuffleCount(_tableId: uint256) -> uint256:
+  return self.tables[_tableId].deck.shuffleCount(self.tables[_tableId].deckId)
+
 @external
 def submitShuffle(_tableId: uint256, _seatIndex: uint256,
                   _shuffle: DynArray[uint256[2], 2000],
                   _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256:
   self.validatePhase(_tableId, Phase_SHUFFLE)
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
-  self.tables[_tableId].deck.submitShuffle(self.tables[_tableId].deckId, _seatIndex, _shuffle)
-  self.tables[_tableId].deck.challenge(
-    self.tables[_tableId].deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
+  deckId: uint256 = self.tables[_tableId].deckId
   self.tables[_tableId].commitBlock = block.number
-  return self.tables[_tableId].deck.respondChallenge(
-    self.tables[_tableId].deckId, _seatIndex, _commitment)
+  self.tables[_tableId].deck.submitShuffle(deckId, _seatIndex, _shuffle)
+  self.tables[_tableId].deck.challenge(deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
+  return self.tables[_tableId].deck.respondChallenge(deckId, _seatIndex, _commitment)
 
 @external
 def submitVerif(_tableId: uint256, _seatIndex: uint256,
@@ -272,7 +273,8 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
 
 @internal
 def autoShuffle(_tableId: uint256):
-  seatIndex: uint256 = self.tables[_tableId].deck.shuffleCount(self.tables[_tableId].deckId)
+  deckId: uint256 = self.tables[_tableId].deckId
+  seatIndex: uint256 = self.shuffleCount(_tableId)
   for _ in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:
       self.finishShuffle(_tableId)
@@ -281,8 +283,7 @@ def autoShuffle(_tableId: uint256):
       # just copy the shuffle: use identity permutation and secret key = 1
       # do not challenge it; external challenges can just be ignored
       self.tables[_tableId].deck.submitShuffle(
-        self.tables[_tableId].deckId, seatIndex,
-        self.tables[_tableId].deck.lastShuffle(self.tables[_tableId].deckId))
+        deckId, seatIndex, self.tables[_tableId].deck.lastShuffle(deckId))
       seatIndex = unsafe_add(seatIndex, 1)
     else:
       self.tables[_tableId].commitBlock = block.number
@@ -311,17 +312,20 @@ def reshuffle(_tableId: uint256):
 # deal
 
 @internal
+@view
+def decryptCount(_tableId: uint256, _cardIndex: uint256) -> uint256:
+  return self.tables[_tableId].deck.decryptCount(self.tables[_tableId].deckId, _cardIndex)
+
+@internal
 def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
-  seatIndex: uint256 = self.tables[_tableId].deck.decryptCount(
-                         self.tables[_tableId].deckId, _cardIndex)
+  deckId: uint256 = self.tables[_tableId].deckId
+  seatIndex: uint256 = self.decryptCount(_tableId, _cardIndex)
   for _ in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
     if not self.tables[_tableId].present[seatIndex]:
-      card: uint256[2] = self.tables[_tableId].deck.lastDecrypt(
-                           self.tables[_tableId].deckId, _cardIndex)
-      self.tables[_tableId].deck.decryptCard(
-        self.tables[_tableId].deckId, seatIndex, _cardIndex, card,
+      card: uint256[2] = self.tables[_tableId].deck.lastDecrypt(deckId, _cardIndex)
+      self.tables[_tableId].deck.decryptCard(deckId, seatIndex, _cardIndex, card,
         self.tables[_tableId].deck.emptyProof(card))
       seatIndex = unsafe_add(seatIndex, 1)
     else:
@@ -357,7 +361,7 @@ def checkRevelations(_tableId: uint256) -> bool:
           self.tables[_tableId].deckId, cardIndex) == 0):
       return False
     if (self.tables[_tableId].requirement[cardIndex] != Req_DECK and
-        self.tables[_tableId].deck.decryptCount(self.tables[_tableId].deckId, cardIndex) <=
+        self.decryptCount(_tableId, cardIndex) <=
         self.tables[_tableId].drawIndex[cardIndex]):
       return False
   return True

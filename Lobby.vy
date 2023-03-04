@@ -88,7 +88,8 @@ def new(_playerId: uint256, _tableId: uint256, _seatIndex: uint256, _config: Con
   assert 0 < _config.structure[0], "invalid structure"
   assert 0 < _config.buyIn, "invalid buyIn"
   assert _seatIndex < _config.startsWith, "invalid seatIndex"
-  assert msg.value == _config.bond + _config.buyIn, "incorrect bond + buyIn"
+  assert _config.startsWith * (_config.bond + _config.buyIn) <= max_value(uint256), "amounts too large"
+  assert msg.value == unsafe_add(_config.bond, _config.buyIn), "incorrect bond + buyIn"
   self.tables[_tableId].deck = DeckManager(_deckAddr)
   self.tables[_tableId].deckId = self.tables[_tableId].deck.newDeck(52, _config.startsWith)
   self.tables[_tableId].phase = Phase_JOIN
@@ -103,7 +104,8 @@ def join(_playerId: uint256, _tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == empty(uint256), "seatIndex unavailable"
-  assert msg.value == self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn, "incorrect bond + buyIn"
+  assert msg.value == unsafe_add(
+    self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn), "incorrect bond + buyIn"
   self.tables[_tableId].seats[_seatIndex] = _playerId
 
 @external
@@ -111,7 +113,7 @@ def leave(_tableId: uint256, _seatIndex: uint256):
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   self.tables[_tableId].seats[_seatIndex] = empty(uint256)
-  send(msg.sender, self.tables[_tableId].config.bond + self.tables[_tableId].config.buyIn)
+  send(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
 
 @external
 def start(_tableId: uint256):
