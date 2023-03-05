@@ -51,6 +51,15 @@ interface DeckManager:
 
 # player registry
 
+event PlayerRegistered:
+  playerId: indexed(uint256)
+  newAddress: indexed(address)
+
+event PlayerChangedAddress:
+  playerId: indexed(uint256)
+  oldAddress: indexed(address)
+  newAddress: indexed(address)
+
 playerAddress: HashMap[uint256, address]
 pendingPlayerAddress: HashMap[uint256, address]
 nextPlayerId: uint256
@@ -60,6 +69,7 @@ def register() -> uint256:
   playerId: uint256 = self.nextPlayerId
   self.playerAddress[playerId] = msg.sender
   self.nextPlayerId = unsafe_add(playerId, 1)
+  log PlayerRegistered(playerId, msg.sender)
   return playerId
 
 @external
@@ -71,6 +81,7 @@ def changePlayerAddress(_playerId: uint256, _newAddress: address):
 def confirmChangePlayerAddress(_playerId: uint256):
   assert self.pendingPlayerAddress[_playerId] == msg.sender, "unauthorised"
   self.pendingPlayerAddress[_playerId] = empty(address)
+  log PlayerChangedAddress(_playerId, self.playerAddress[_playerId], msg.sender)
   self.playerAddress[_playerId] = msg.sender
 
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
