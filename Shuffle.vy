@@ -1,4 +1,4 @@
-# @version ^0.3.8
+# @version ^0.3.7
 # shuffling implementation
 
 # copy of Deck.vy's storage variables, so delegatecall works

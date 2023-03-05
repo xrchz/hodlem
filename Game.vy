@@ -1,4 +1,4 @@
-# @version ^0.3.8
+# @version ^0.3.7
 # no-limit hold'em sit-n-go single-table tournaments
 
 # TODO: add event logs
@@ -30,8 +30,38 @@ struct CB:
 struct DeckPrep:
   cards: DynArray[CB, MAX_SIZE]
 # end of copy
-import Deck as DeckManager
-import Rank as RankManager
+
+# import Deck as DeckManager
+# TODO: define the interface explicitly instead of importing
+# because of https://github.com/vyperlang/titanoboa/issues/15
+interface DeckManager:
+    def newDeck(_size: uint256, _players: uint256) -> uint256: nonpayable
+    def changeDealer(_id: uint256, _newAddress: address): nonpayable
+    def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
+    def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep): nonpayable
+    def emptyProof(card: uint256[2]) -> Proof: pure
+    def finishPrep(_id: uint256) -> uint256: nonpayable
+    def resetShuffle(_id: uint256): nonpayable
+    def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 2000]): nonpayable
+    def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256): nonpayable
+    def respondChallenge(_id: uint256, _playerIdx: uint256, _data: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256: nonpayable
+    def defuseChallenge(_id: uint256, _playerIdx: uint256, _scalars: DynArray[uint256, 256], _permutations: DynArray[DynArray[uint256, 2000], 256]): nonpayable
+    def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256): nonpayable
+    def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2], _proof: Proof): nonpayable
+    def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _openIdx: uint256, _proof: Proof): nonpayable
+    def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool: view
+    def shuffleCount(_id: uint256) -> uint256: view
+    def lastShuffle(_id: uint256) -> DynArray[uint256[2], 2000]: view
+    def challengeActive(_id: uint256, _playerIdx: uint256) -> bool: view
+    def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256: view
+    def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]: view
+    def openedCard(_id: uint256, _cardIdx: uint256) -> uint256: view
+
+# import Rank as RankManager
+# TODO: define the interface explicitly instead of importing
+# because of https://github.com/vyperlang/titanoboa/issues/15
+interface RankManager:
+    def bestHandRank(cards: uint256[7]) -> uint256: pure
 
 # copied from Table.vy
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
@@ -59,7 +89,50 @@ Phase_DEAL:    constant(uint256) = 4 # drawing and possibly opening cards as cur
 Phase_PLAY:    constant(uint256) = 5 # betting; new card revelations may become required
 Phase_SHOW:    constant(uint256) = 6 # showdown; new card revelations may become required
 # end copy
-import Table as TableManager
+
+# import Table as TableManager
+# TODO: define the interface explicitly instead of importing
+# because of https://github.com/vyperlang/titanoboa/issues/15
+# External Interfaces
+interface TableManager:
+    def register() -> uint256: nonpayable
+    def changePlayerAddress(_playerId: uint256, _newAddress: address): nonpayable
+    def confirmChangePlayerAddress(_playerId: uint256): nonpayable
+    def createTable(_playerId: uint256, _seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256: payable
+    def joinTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint256): payable
+    def leaveTable(_tableId: uint256, _seatIndex: uint256): nonpayable
+    def startGame(_tableId: uint256): nonpayable
+    def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256): nonpayable
+    def deleteTable(_tableId: uint256): nonpayable
+    def prepareTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
+    def shuffleTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
+    def verificationTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
+    def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
+    def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
+    def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DeckPrep): nonpayable
+    def finishDeckPrep(_tableId: uint256): nonpayable
+    def submitShuffle(_tableId: uint256, _seatIndex: uint256, _shuffle: DynArray[uint256[2], 2000], _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256: nonpayable
+    def submitVerif(_tableId: uint256, _seatIndex: uint256, _scalars: DynArray[uint256, 256], _permutations: DynArray[DynArray[uint256, 2000], 256]): nonpayable
+    def reshuffle(_tableId: uint256): nonpayable
+    def setPresence(_tableId: uint256, _seatIndex: uint256, _present: bool): nonpayable
+    def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _card: uint256[2], _proof: Proof): nonpayable
+    def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _openIndex: uint256, _proof: Proof): nonpayable
+    def endDeal(_tableId: uint256): nonpayable
+    def startDeal(_tableId: uint256): nonpayable
+    def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256: nonpayable
+    def showCard(_tableId: uint256, _cardIndex: uint256): nonpayable
+    def burnCard(_tableId: uint256): nonpayable
+    def startShow(_tableId: uint256): nonpayable
+    def authorised(_tableId: uint256, _phase: uint256, _seatIndex: uint256 = empty(uint256), _address: address = empty(address)) -> bool: view
+    def gameId(_tableId: uint256) -> uint256: view
+    def cardAt(_tableId: uint256, _deckIndex: uint256) -> uint256: view
+    def deckIndex(_tableId: uint256) -> uint256: view
+    def numPlayers(_tableId: uint256) -> uint256: view
+    def maxPlayers(_tableId: uint256) -> uint256: view
+    def buyIn(_tableId: uint256) -> uint256: view
+    def actBlocks(_tableId: uint256) -> uint256: view
+    def levelBlocks(_tableId: uint256) -> uint256: view
+    def level(_tableId: uint256, level: uint256) -> uint256: view
 
 T: immutable(TableManager)
 R: immutable(RankManager)

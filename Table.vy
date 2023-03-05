@@ -1,4 +1,4 @@
-# @version ^0.3.8
+# @version ^0.3.7
 
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
 MAX_SIZE: constant(uint256) = 2000
@@ -22,7 +22,32 @@ struct CP:
 struct DeckPrep:
   cards: DynArray[CP, 2000]
 # end of copy
-import Deck as DeckManager
+
+# import Deck as DeckManager
+# TODO: define the interface explicitly instead of importing
+# because of https://github.com/vyperlang/titanoboa/issues/15
+interface DeckManager:
+    def newDeck(_size: uint256, _players: uint256) -> uint256: nonpayable
+    def changeDealer(_id: uint256, _newAddress: address): nonpayable
+    def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
+    def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep): nonpayable
+    def emptyProof(card: uint256[2]) -> Proof: pure
+    def finishPrep(_id: uint256) -> uint256: nonpayable
+    def resetShuffle(_id: uint256): nonpayable
+    def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 2000]): nonpayable
+    def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256): nonpayable
+    def respondChallenge(_id: uint256, _playerIdx: uint256, _data: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256: nonpayable
+    def defuseChallenge(_id: uint256, _playerIdx: uint256, _scalars: DynArray[uint256, 256], _permutations: DynArray[DynArray[uint256, 2000], 256]): nonpayable
+    def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256): nonpayable
+    def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2], _proof: Proof): nonpayable
+    def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _openIdx: uint256, _proof: Proof): nonpayable
+    def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool: view
+    def shuffleCount(_id: uint256) -> uint256: view
+    def lastShuffle(_id: uint256) -> DynArray[uint256[2], 2000]: view
+    def challengeActive(_id: uint256, _playerIdx: uint256) -> bool: view
+    def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256: view
+    def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]: view
+    def openedCard(_id: uint256, _cardIdx: uint256) -> uint256: view
 
 # player registry
 

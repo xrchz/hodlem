@@ -105,8 +105,10 @@ def rank(card: uint256) -> uint256:
 
 @internal
 @pure
-def suit(card: uint256) -> uint256:
-  return unsafe_div(unsafe_sub(card, 1), 13)
+# TODO: convert to int128 because of this bug
+# https://github.com/vyperlang/vyper/issues/3309
+def suit(card: uint256) -> int128:
+  return convert(unsafe_div(unsafe_sub(card, 1), 13), int128)
 
 @internal
 @pure
