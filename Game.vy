@@ -3,6 +3,7 @@
 
 # TODO: add event logs
 # TODO: make a frontend
+# TODO: add pause?
 # TODO: add rake (rewards tabs for progress txns)?
 # TODO: add penalties (instead of full abort on failure)?
 
@@ -312,6 +313,7 @@ def endShow(_tableId: uint256):
     elif self.playersLeft(numPlayers, gameId) <= T.maxPlayers(_tableId):
       self.gameOver(numPlayers, _tableId, gameId)
     else:
+      self.removeEliminated(numPlayers, _tableId, gameId)
       T.reshuffle(_tableId)
   else:
     self.games[gameId].actionBlock = block.number
@@ -365,6 +367,14 @@ def settleUncontested(_numPlayers: uint256, _gameId: uint256) -> uint256:
   return numContested
 
 @internal
+def removeEliminated(_numPlayers: uint256, _tableId: uint256, _gameId: uint256):
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == _numPlayers:
+      break
+    if self.games[_gameId].stack[seatIndex] == empty(uint256):
+      T.setPresence(_tableId, seatIndex, False)
+
+@internal
 @view
 def playersLeft(_numPlayers: uint256, _gameId: uint256) -> uint256:
   playersLeft: uint256 = 0
@@ -412,6 +422,7 @@ def afterAct(_tableId: uint256, _gameId: uint256, _seatIndex: uint256):
       if self.playersLeft(numPlayers, _gameId) <= T.maxPlayers(_tableId):
         self.gameOver(numPlayers, _tableId, _gameId)
       else:
+        self.removeEliminated(numPlayers, _tableId, _gameId)
         T.reshuffle(_tableId)
     elif self.games[_gameId].board[4] == empty(uint256):
       self.drawNextCard(_tableId, _gameId)

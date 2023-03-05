@@ -309,6 +309,11 @@ def reshuffle(_tableId: uint256):
   self.tables[_tableId].phase = Phase_SHUFFLE
   self.tables[_tableId].commitBlock = block.number
 
+@external
+def setPresence(_tableId: uint256, _seatIndex: uint256, _present: bool):
+  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.tables[_tableId].present[_seatIndex] = _present
+
 # deal
 
 @internal
