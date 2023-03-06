@@ -30,3 +30,11 @@ socket.on('account', (address, privkey) => {
   privkeyElement.value = privkey
   newAccountButton.disabled = privkeyElement.value != ''
 })
+
+privkeyElement.dispatchEvent(new Event('change'))
+
+const balanceElement = document.getElementById('balance')
+
+socket.on('balance', balance => {
+  balanceElement.value = balance
+})

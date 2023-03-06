@@ -8,12 +8,26 @@
     <script src="socket.io/socket.io.js"></script>
   </head>
   <body>
-    <div id=account>
+    <div id=accountDiv>
       <input type=button value=New></input>
-      <label>Address: <input id=address disabled></input></label>
+      <label>Address: <input id=address class=address readonly autocomplete=off></input></label>
       <label for=privkey>Key:</label>
       <input type=button value=Hide></input>
-      <input id=privkey></input>
+      <input id=privkey autocomplete=on></input>
+      <div id=accountSend>
+        <label>Balance: <input id=balance class=amount readonly autocomplete=off></input</label>
+        <label>Amount: <input id=sendAmount class=amount></input></label>
+        <label>To: <input id=sendTo class=address></input></label>
+        <input id=sendButton type=button value=Send></input>
+      </div>
+    </div>
+    <div id=playDiv>
+    </div>
+    <div id=joinDiv>
+    </div>
+    <div id=createDiv>
+      <!--TODO: form for game parameters-->
+      <input id=createGame type=button value="Create Game"></input>
     </div>
     <script src="script.js"></script>
   </body>

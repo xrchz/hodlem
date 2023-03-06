@@ -7,11 +7,16 @@ body {
   font-family: 'DejaVu Sans', sans-serif;
 }
 
-#address {
+.address {
   width: 36em;
 }
+
 #privkey {
   width: 54em;
+}
+
+.amount {
+  width: 8em;
 }
 
 .hidden {
