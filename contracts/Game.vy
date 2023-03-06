@@ -89,11 +89,8 @@ Phase_SHOW: constant(uint256) = 6 # showdown; new card revelations may become re
 # because of https://github.com/vyperlang/titanoboa/issues/15
 # External Interfaces
 interface RoomManager:
-    def register() -> uint256: nonpayable
-    def changePlayerAddress(_playerId: uint256, _newAddress: address): nonpayable
-    def confirmChangePlayerAddress(_playerId: uint256): nonpayable
-    def createTable(_playerId: uint256, _seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256: payable
-    def joinTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint256): payable
+    def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256: payable
+    def joinTable(_tableId: uint256, _seatIndex: uint256): payable
     def leaveTable(_tableId: uint256, _seatIndex: uint256): nonpayable
     def startGame(_tableId: uint256): nonpayable
     def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256): nonpayable

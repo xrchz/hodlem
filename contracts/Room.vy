@@ -49,41 +49,6 @@ interface DeckManager:
     def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]: view
     def openedCard(_id: uint256, _cardIdx: uint256) -> uint256: view
 
-# player registry
-
-event PlayerRegistered:
-  playerId: indexed(uint256)
-  newAddress: indexed(address)
-
-event PlayerChangedAddress:
-  playerId: indexed(uint256)
-  oldAddress: indexed(address)
-  newAddress: indexed(address)
-
-playerAddress: HashMap[uint256, address]
-pendingPlayerAddress: HashMap[uint256, address]
-nextPlayerId: uint256
-
-@external
-def register() -> uint256:
-  playerId: uint256 = self.nextPlayerId
-  self.playerAddress[playerId] = msg.sender
-  self.nextPlayerId = unsafe_add(playerId, 1)
-  log PlayerRegistered(playerId, msg.sender)
-  return playerId
-
-@external
-def changePlayerAddress(_playerId: uint256, _newAddress: address):
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
-  self.pendingPlayerAddress[_playerId] = _newAddress
-
-@external
-def confirmChangePlayerAddress(_playerId: uint256):
-  assert self.pendingPlayerAddress[_playerId] == msg.sender, "unauthorised"
-  self.pendingPlayerAddress[_playerId] = empty(address)
-  log PlayerChangedAddress(_playerId, self.playerAddress[_playerId], msg.sender)
-  self.playerAddress[_playerId] = msg.sender
-
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament structure
 
@@ -117,7 +82,7 @@ struct Config:
 
 struct Table:
   config:      Config
-  seats:       uint256[9]           # playerIds in seats as at the start of the game
+  seats:       address[9]           # playerIds in seats as at the start of the game
   deck:        DeckManager          # deck contract
   deckId:      uint256              # id of deck in deck contract
   phase:       uint256
@@ -134,15 +99,13 @@ nextTableId: uint256
 
 @external
 def __init__():
-  self.nextPlayerId = 1
   self.nextTableId = 1
 
 # lobby
 
 @external
 @payable
-def createTable(_playerId: uint256, _seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
   assert 1 < _config.startsWith, "invalid startsWith"
   assert _config.startsWith <= MAX_SEATS, "invalid startsWith"
   assert _config.untilLeft < _config.startsWith, "invalid untilLeft"
@@ -157,26 +120,25 @@ def createTable(_playerId: uint256, _seatIndex: uint256, _config: Config, _deckA
   self.tables[tableId].deckId = self.tables[tableId].deck.newDeck(52, _config.startsWith)
   self.tables[tableId].phase = Phase_JOIN
   self.tables[tableId].config = _config
-  self.tables[tableId].seats[_seatIndex] = _playerId
+  self.tables[tableId].seats[_seatIndex] = msg.sender
   self.nextTableId = unsafe_add(tableId, 1)
   return tableId
 
 @external
 @payable
-def joinTable(_playerId: uint256, _tableId: uint256, _seatIndex: uint256):
-  assert self.playerAddress[_playerId] == msg.sender, "unauthorised"
+def joinTable(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
-  assert self.tables[_tableId].seats[_seatIndex] == empty(uint256), "seatIndex unavailable"
+  assert self.tables[_tableId].seats[_seatIndex] == empty(address), "seatIndex unavailable"
   assert msg.value == unsafe_add(
     self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn), "incorrect bond + buyIn"
-  self.tables[_tableId].seats[_seatIndex] = _playerId
+  self.tables[_tableId].seats[_seatIndex] = msg.sender
 
 @external
 def leaveTable(_tableId: uint256, _seatIndex: uint256):
-  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
-  self.tables[_tableId].seats[_seatIndex] = empty(uint256)
+  self.tables[_tableId].seats[_seatIndex] = empty(address)
   send(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
 
 @external
@@ -185,7 +147,7 @@ def startGame(_tableId: uint256):
   for seatIndex in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
-    assert self.tables[_tableId].seats[seatIndex] != empty(uint256), "not enough players"
+    assert self.tables[_tableId].seats[seatIndex] != empty(address), "not enough players"
     self.tables[_tableId].present[seatIndex] = True
   self.tables[_tableId].phase = Phase_PREP
   self.tables[_tableId].commitBlock = block.number
@@ -193,7 +155,7 @@ def startGame(_tableId: uint256):
 @external
 def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
-  send(self.playerAddress[self.tables[_tableId].seats[_seatIndex]],
+  send(self.tables[_tableId].seats[_seatIndex],
        unsafe_add(self.tables[_tableId].config.bond, _stack))
 
 @external
@@ -260,11 +222,11 @@ def failChallenge(_tableId: uint256, _challIndex: uint256):
   perPlayer: uint256 = unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn)
   # burn the offender's bond + buyIn
   send(empty(address), perPlayer)
-  self.tables[_tableId].seats[_challIndex] = empty(uint256)
+  self.tables[_tableId].seats[_challIndex] = empty(address)
   # refund the others' bonds and buyIns
   for playerId in self.tables[_tableId].seats:
-    if playerId != empty(uint256):
-      send(self.playerAddress[playerId], perPlayer)
+    if playerId != empty(address):
+      send(playerId, perPlayer)
   # delete the game
   self.tables[_tableId] = empty(Table)
 
@@ -273,7 +235,7 @@ def failChallenge(_tableId: uint256, _challIndex: uint256):
 @external
 def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DeckPrep):
   self.validatePhase(_tableId, Phase_PREP)
-  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _deckPrep)
 
 @external
@@ -302,7 +264,7 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
                   _shuffle: DynArray[uint256[2], 2000],
                   _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256:
   self.validatePhase(_tableId, Phase_SHUF)
-  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   deckId: uint256 = self.tables[_tableId].deckId
   self.tables[_tableId].commitBlock = block.number
   self.tables[_tableId].deck.submitShuffle(deckId, _seatIndex, _shuffle)
@@ -314,7 +276,7 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
                 _scalars: DynArray[uint256, 256],
                 _permutations: DynArray[DynArray[uint256, 2000], 256]):
   self.validatePhase(_tableId, Phase_SHUF)
-  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   self.tables[_tableId].deck.defuseChallenge(
     self.tables[_tableId].deckId, _seatIndex, _scalars, _permutations)
   self.autoShuffle(_tableId)
@@ -389,7 +351,7 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
 def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
                 _card: uint256[2], _proof: Proof):
   self.validatePhase(_tableId, Phase_DEAL)
-  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "decrypt not allowed"
   self.tables[_tableId].deck.decryptCard(
     self.tables[_tableId].deckId, _seatIndex, _cardIndex, _card, _proof)
@@ -399,7 +361,7 @@ def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
 def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
                _openIndex: uint256, _proof: Proof):
   self.validatePhase(_tableId, Phase_DEAL)
-  assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
+  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   assert self.tables[_tableId].drawIndex[_cardIndex] == _seatIndex, "wrong player"
   assert self.tables[_tableId].requirement[_cardIndex] == Req_SHOW, "reveal not allowed"
   self.tables[_tableId].deck.openCard(
@@ -469,8 +431,7 @@ def authorised(_tableId: uint256, _phase: uint256,
                _address: address = empty(address)) -> bool:
   return (self.tables[_tableId].phase == _phase and
           (_address == empty(address) or
-           _address == self.playerAddress[
-                         self.tables[_tableId].seats[_seatIndex]]))
+           _address == self.tables[_tableId].seats[_seatIndex]))
 
 @external
 @view
