@@ -2,6 +2,7 @@ const socket = io()
 
 const addressElement = document.getElementById('address')
 const privkeyElement = document.getElementById('privkey')
+const newAccountButton = addressElement.parentElement.previousElementSibling
 const hidePrivkeyButton = privkeyElement.previousElementSibling
 
 hidePrivkeyButton.addEventListener('click', (e) => {
@@ -15,7 +16,17 @@ hidePrivkeyButton.addEventListener('click', (e) => {
   }
 })
 
-socket.on('wallet', (address, privkey) => {
+newAccountButton.addEventListener('click', (e) => {
+  socket.emit('newAccount')
+})
+
+privkeyElement.addEventListener('change', (e) => {
+  newAccountButton.disabled = privkeyElement.value != ''
+  socket.emit('privkey', privkeyElement.value)
+})
+
+socket.on('account', (address, privkey) => {
   addressElement.value = address
   privkeyElement.value = privkey
+  newAccountButton.disabled = privkeyElement.value != ''
 })

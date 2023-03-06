@@ -16,7 +16,21 @@ const io = require('socket.io')(server)
 
 server.listen(process.env.PORT || 8080)
 
+var account
+
 io.on('connection', socket => {
-  const wallet = ethers.Wallet.createRandom()
-  socket.emit('wallet', wallet.address, wallet.privateKey)
+  socket.on('newAccount', () => {
+    account = ethers.Wallet.createRandom()
+    socket.emit('account', account.address, account.privateKey)
+  })
+
+  socket.on('privkey', privkey => {
+    try {
+      account = new ethers.Wallet(privkey)
+    }
+    catch {
+      account = {address: '', privateKey: ''}
+    }
+    socket.emit('account', account.address, account.privateKey)
+  })
 })
