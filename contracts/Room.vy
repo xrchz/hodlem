@@ -103,6 +103,22 @@ def __init__():
 
 # lobby
 
+event JoinTable:
+  table: indexed(uint256)
+  player: indexed(address)
+  seat: indexed(uint256)
+
+event LeaveTable:
+  table: indexed(uint256)
+  player: indexed(address)
+  seat: indexed(uint256)
+
+event StartGame:
+  table: indexed(uint256)
+
+event EndGame:
+  table: indexed(uint256)
+
 @external
 @payable
 def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
@@ -122,6 +138,7 @@ def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uin
   self.tables[tableId].config = _config
   self.tables[tableId].seats[_seatIndex] = msg.sender
   self.nextTableId = unsafe_add(tableId, 1)
+  log JoinTable(tableId, msg.sender, _seatIndex)
   return tableId
 
 @external
@@ -133,6 +150,7 @@ def joinTable(_tableId: uint256, _seatIndex: uint256):
   assert msg.value == unsafe_add(
     self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn), "incorrect bond + buyIn"
   self.tables[_tableId].seats[_seatIndex] = msg.sender
+  log JoinTable(_tableId, msg.sender, _seatIndex)
 
 @external
 def leaveTable(_tableId: uint256, _seatIndex: uint256):
@@ -140,6 +158,7 @@ def leaveTable(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   self.tables[_tableId].seats[_seatIndex] = empty(address)
   send(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
+  log LeaveTable(_tableId, msg.sender, _seatIndex)
 
 @external
 def startGame(_tableId: uint256):
@@ -151,6 +170,7 @@ def startGame(_tableId: uint256):
     self.tables[_tableId].present[seatIndex] = True
   self.tables[_tableId].phase = Phase_PREP
   self.tables[_tableId].commitBlock = block.number
+  log StartGame(_tableId)
 
 @external
 def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
@@ -162,6 +182,7 @@ def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
 def deleteTable(_tableId: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   self.tables[_tableId] = empty(Table)
+  log EndGame(_tableId)
 
 # timeouts
 
