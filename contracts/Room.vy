@@ -93,12 +93,12 @@ Req_SHOW: constant(uint256) = 2 # must be shown by all
 
 # not using Vyper enum because of this bug
 # https://github.com/vyperlang/vyper/pull/3196/files#r1062141796
-Phase_JOIN:    constant(uint256) = 1 # before the game has started, taking seats
-Phase_PREP:    constant(uint256) = 2 # all players seated, preparing the deck
-Phase_SHUFFLE: constant(uint256) = 3 # submitting shuffles and verifications in order
-Phase_DEAL:    constant(uint256) = 4 # drawing and possibly opening cards as currently required
-Phase_PLAY:    constant(uint256) = 5 # betting; new card revelations may become required
-Phase_SHOW:    constant(uint256) = 6 # showdown; new card revelations may become required
+Phase_JOIN: constant(uint256) = 1 # before the game has started, taking seats
+Phase_PREP: constant(uint256) = 2 # all players seated, preparing the deck
+Phase_SHUF: constant(uint256) = 3 # submitting shuffles and verifications in order
+Phase_DEAL: constant(uint256) = 4 # drawing and possibly opening cards as currently required
+Phase_PLAY: constant(uint256) = 5 # betting; new card revelations may become required
+Phase_SHOW: constant(uint256) = 6 # showdown; new card revelations may become required
 
 struct Config:
   gameAddress: address             # address of game manager
@@ -219,7 +219,7 @@ def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
 
 @external
 def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
-  self.validatePhase(_tableId, Phase_SHUFFLE)
+  self.validatePhase(_tableId, Phase_SHUF)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.shuffBlocks), "deadline not passed"
   assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
@@ -227,7 +227,7 @@ def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
 
 @external
 def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
-  self.validatePhase(_tableId, Phase_SHUFFLE)
+  self.validatePhase(_tableId, Phase_SHUF)
   assert block.number > (self.tables[_tableId].commitBlock +
                          self.tables[_tableId].config.verifBlocks), "deadline not passed"
   assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
@@ -285,7 +285,7 @@ def finishDeckPrep(_tableId: uint256):
       if cardIndex == failIndex: break
       self.tables[_tableId].drawIndex[cardIndex] = cardIndex
       self.tables[_tableId].requirement[cardIndex] = Req_SHOW
-    self.tables[_tableId].phase = Phase_SHUFFLE
+    self.tables[_tableId].phase = Phase_SHUF
     self.tables[_tableId].commitBlock = block.number
   else:
     self.failChallenge(_tableId, failIndex)
@@ -301,7 +301,7 @@ def shuffleCount(_tableId: uint256) -> uint256:
 def submitShuffle(_tableId: uint256, _seatIndex: uint256,
                   _shuffle: DynArray[uint256[2], 2000],
                   _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256:
-  self.validatePhase(_tableId, Phase_SHUFFLE)
+  self.validatePhase(_tableId, Phase_SHUF)
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   deckId: uint256 = self.tables[_tableId].deckId
   self.tables[_tableId].commitBlock = block.number
@@ -313,7 +313,7 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
 def submitVerif(_tableId: uint256, _seatIndex: uint256,
                 _scalars: DynArray[uint256, 256],
                 _permutations: DynArray[DynArray[uint256, 2000], 256]):
-  self.validatePhase(_tableId, Phase_SHUFFLE)
+  self.validatePhase(_tableId, Phase_SHUF)
   assert self.playerAddress[self.tables[_tableId].seats[_seatIndex]] == msg.sender, "unauthorised"
   self.tables[_tableId].deck.defuseChallenge(
     self.tables[_tableId].deckId, _seatIndex, _scalars, _permutations)
@@ -354,7 +354,7 @@ def finishShuffle(_tableId: uint256):
 def reshuffle(_tableId: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   self.tables[_tableId].deck.resetShuffle(self.tables[_tableId].deckId)
-  self.tables[_tableId].phase = Phase_SHUFFLE
+  self.tables[_tableId].phase = Phase_SHUF
   self.tables[_tableId].commitBlock = block.number
 
 @external
