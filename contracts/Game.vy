@@ -63,7 +63,7 @@ interface DeckManager:
 interface RankManager:
     def bestHandRank(cards: uint256[7]) -> uint256: pure
 
-# copied from Table.vy
+# copied from Room.vy
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament structure
 
@@ -90,11 +90,11 @@ Phase_PLAY:    constant(uint256) = 5 # betting; new card revelations may become 
 Phase_SHOW:    constant(uint256) = 6 # showdown; new card revelations may become required
 # end copy
 
-# import Table as TableManager
+# import Room as RoomManager
 # TODO: define the interface explicitly instead of importing
 # because of https://github.com/vyperlang/titanoboa/issues/15
 # External Interfaces
-interface TableManager:
+interface RoomManager:
     def register() -> uint256: nonpayable
     def changePlayerAddress(_playerId: uint256, _newAddress: address): nonpayable
     def confirmChangePlayerAddress(_playerId: uint256): nonpayable
@@ -134,12 +134,12 @@ interface TableManager:
     def levelBlocks(_tableId: uint256) -> uint256: view
     def level(_tableId: uint256, level: uint256) -> uint256: view
 
-T: immutable(TableManager)
+T: immutable(RoomManager)
 R: immutable(RankManager)
 
 @external
-def __init__(tableAddress: address, rankAddress: address):
-  T = TableManager(tableAddress)
+def __init__(roomAddress: address, rankAddress: address):
+  T = RoomManager(roomAddress)
   R = RankManager(rankAddress)
 
 struct Game:
