@@ -19,6 +19,23 @@ body {
   width: 18em;
 }
 
+input[type=number].blocks {
+  width: 6em;
+}
+
+input[type=number] {
+  width: 4em;
+}
+
+#structure {
+  width: 72em;
+}
+
+#createDiv > ul {
+  padding: 0;
+  list-style-type: none;
+}
+
 .hidden {
   display: none;
 }
