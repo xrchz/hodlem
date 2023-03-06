@@ -5,5 +5,15 @@
 
 body {
   font-family: 'DejaVu Sans', sans-serif;
-  font-size: large;
+}
+
+#address {
+  width: 36em;
+}
+#privkey {
+  width: 54em;
+}
+
+.hidden {
+  display: none;
 }

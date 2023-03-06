@@ -2,6 +2,7 @@
 
 require('dotenv').config()
 
+const ethers = require('ethers')
 const express = require('express')
 const app = express()
 
@@ -16,5 +17,6 @@ const io = require('socket.io')(server)
 server.listen(process.env.PORT || 8080)
 
 io.on('connection', socket => {
-  socket.emit('hello')
+  const wallet = ethers.Wallet.createRandom()
+  socket.emit('wallet', wallet.address, wallet.privateKey)
 })
