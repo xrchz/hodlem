@@ -8,9 +8,10 @@ const resetFeesButton = document.getElementById('resetFees')
 
 resetFeesButton.addEventListener('click', (e) => {
   socket.emit('resetFees')
+  resetFeesButton.disabled = true
 })
 
-socket.emit('resetFees')
+resetFeesButton.dispatchEvent(new Event('click'))
 
 socket.on('maxFeePerGas', fee => {
   maxFeeElement.value = fee
@@ -22,6 +23,7 @@ socket.on('maxPriorityFeePerGas', fee => {
 function customFees() {
   if (maxFeeElement.checkValidity() && prioFeeElement.checkValidity()) {
     socket.emit('customFees', maxFeeElement.value, prioFeeElement.value)
+    resetFeesButton.disabled = false
   }
   else {
     maxFeeElement.reportValidity()

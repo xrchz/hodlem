@@ -47,7 +47,6 @@ server.listen(process.env.PORT || 8080)
   }
 
   async function refreshFeeData(socket) {
-    console.log('in refreshFeeData')
     if (!('customFees' in socket)) {
       console.log(`querying fee data...`)
       socket.feeData = await provider.getFeeData()
@@ -55,12 +54,6 @@ server.listen(process.env.PORT || 8080)
       socket.emit('maxFeePerGas', ethers.utils.formatUnits(socket.feeData.maxFeePerGas, 'gwei'))
       socket.emit('maxPriorityFeePerGas', ethers.utils.formatUnits(socket.feeData.maxPriorityFeePerGas, 'gwei'))
     }
-    else {
-      console.log(`socket.customFees = ${JSON.stringify(socket.customFees)}`)
-      console.log(`'customFees' in socket = ${'customFees' in socket}`)
-      console.log(`!'customFees' in socket = ${!'customFees' in socket}`)
-    }
-    console.log('exiting')
   }
 
   async function refreshNetworkInfo(socket) {
@@ -110,6 +103,10 @@ server.listen(process.env.PORT || 8080)
     socket.on('newAccount', async () => {
       socket.account = ethers.Wallet.createRandom().connect(provider)
       await changeAccount(socket)
+    })
+
+    provider.on('block', async blockNumber => {
+      await refreshNetworkInfo(socket)
     })
 
     socket.on('resetFees', async () => {
