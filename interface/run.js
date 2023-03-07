@@ -46,6 +46,28 @@ server.listen(process.env.PORT || 8080)
       : '')
   }
 
+  async function refreshFeeData(socket) {
+    console.log('in refreshFeeData')
+    if (!('customFees' in socket)) {
+      console.log(`querying fee data...`)
+      socket.feeData = await provider.getFeeData()
+      console.log(`...done`)
+      socket.emit('maxFeePerGas', ethers.utils.formatUnits(socket.feeData.maxFeePerGas, 'gwei'))
+      socket.emit('maxPriorityFeePerGas', ethers.utils.formatUnits(socket.feeData.maxPriorityFeePerGas, 'gwei'))
+    }
+    else {
+      console.log(`socket.customFees = ${JSON.stringify(socket.customFees)}`)
+      console.log(`'customFees' in socket = ${'customFees' in socket}`)
+      console.log(`!'customFees' in socket = ${!'customFees' in socket}`)
+    }
+    console.log('exiting')
+  }
+
+  async function refreshNetworkInfo(socket) {
+    await refreshBalance(socket)
+    await refreshFeeData(socket)
+  }
+
   async function changeAccount(socket) {
     socket.emit('account', socket.account.address, socket.account.privateKey)
     await refreshBalance(socket)
@@ -90,8 +112,19 @@ server.listen(process.env.PORT || 8080)
       await changeAccount(socket)
     })
 
-    socket.on('refreshBalance', async () => {
-      await refreshBalance(socket)
+    socket.on('resetFees', async () => {
+      console.log('in reset fees')
+      delete socket.customFees
+      await refreshFeeData(socket)
+    })
+
+    socket.on('customFees', (maxFeePerGas, maxPriorityFeePerGas) => {
+      console.log(`Setting custom gas prices`)
+      socket.customFees = {
+        maxFeePerGas: ethers.utils.parseUnits(maxFeePerGas, 'gwei'),
+        maxPriorityFeePerGas: ethers.utils.parseUnits(maxPriorityFeePerGas, 'gwei')
+      }
+      socket.feeData = socket.customFees
     })
 
     socket.on('privkey', async privkey => {
@@ -106,12 +139,11 @@ server.listen(process.env.PORT || 8080)
 
     socket.on('send', async (to, amount) => {
       try {
-        console.log('entered send function')
         const tx = {
           to: to,
           type: 2,
-          maxFeePerGas: ethers.utils.parseUnits('16', 'gwei'), // TODO
-          maxPriorityFeePerGas: ethers.utils.parseUnits('2', 'gwei'), // TODO
+          maxFeePerGas: socket.feeData.maxFeePerGas,
+          maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas,
           value: ethers.utils.parseEther(amount)
         }
         console.log(`sending ${amount} to ${to} from ${socket.account.address}...`)
@@ -122,7 +154,7 @@ server.listen(process.env.PORT || 8080)
         await refreshBalance(socket)
       }
       catch (e) {
-        socket.emit('sendError', e.toString())
+        socket.emit('errorMsg', e.toString())
       }
     })
   })

@@ -8,41 +8,49 @@
     <script src="socket.io/socket.io.js"></script>
   </head>
   <body>
-    <div id=accountDiv>
-      <input type=button value=New></input>
+    <p id=errorMsg></p>
+    <section id=networkDiv>
+      <input id=resetFees type=button value=Reset></input>
+      <label>Max fee per gas: <input id=maxFeePerGas class=amountGwei inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input> gwei</label>
+      <label>Max priority fee per gas: <input id=maxPriorityFeePerGas class=amountGwei inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input> gwei</label>
+    </section>
+    <section id=accountDiv>
+      <input id=newAccount type=button value=New></input>
       <label>Address: <input id=address class=address readonly autocomplete=off></input></label>
       <label for=privkey>Key:</label>
-      <input type=button value=Hide></input>
+      <input id=hidePrivKey type=button value=Hide></input>
       <input id=privkey autocomplete=on pattern="0x[0-9a-fA-F]{64}"></input>
       <div id=accountSend>
-        <input id=refreshBalance type=button value=⟳></input>
         <label>Balance: <input id=balance class=amount readonly autocomplete=off></input</label>
         <label>Amount: <input id=sendAmount class=amount inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input></label>
         <label>To: <input id=sendTo class=address title="recipient address" pattern="0x[0-9a-fA-F]{40}"></input></label>
         <input id=sendButton type=button value=Send></input>
       </div>
-    </div>
-    <div id=playDiv>
-    </div>
-    <div id=joinDiv>
-    </div>
-    <div id=createDiv>
+    </section>
+    <section id=playDiv>
+    </section>
+    <section id=joinDiv>
+      <h2>Games Waiting for Players</h2>
+    </section>
+    <section id=createDiv>
+      <h2>New Game</h2>
       <ul>
         <li><label>Buy in: <input id=buyIn class=amount value=0.2 inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input></label></li>
         <li><label>Bond: <input id=bond class=amount value=1.0 inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input></label></li>
         <li><label>Starts with <input id=startsWithPlayers type=number min=2 max=9 value=6></input> players</label></li>
         <li><label>Ends with <input id=untilLeftPlayers type=number min=1 max=8 value=1></input> or fewer players left</label></li>
+        <li><label>Your seat: <input id=seatIndex type=number min=0 max=8 value=0></input></label></li>
         <li><label>Structure (small blind levels): <input id=structure value="0.002 0.004 0.01 0.02 0.04 0.08 0.12" pattern="((^|\s+)(([1-9]\d*)|(\d*\.\d+)))+$"></input></label></li>
         <li><label>Blocks between levels: <input id=levelBlocks class=blocks type=number value=180 min=1></input></label></li>
         <li><label>Shuffle verification rounds: <input id=verifRounds type=number value=4 min=0></input></label></li>
         <li><label>Block deadline for deck preparation: <input id=prepBlocks class=blocks type=number value=30 min=1></input></label></li>
-        <li><label>Block deadline for shuffling: <input id=shufBlocks class=blocks type=number value=30 min=1></input></label></li>
-        <li><label>Block deadline for shuffle verification: <input id=veriBlocks class=blocks type=number value=40 min=1></input></label></li>
+        <li><label>Block deadline for shuffling: <input id=shuffBlocks class=blocks type=number value=30 min=1></input></label></li>
+        <li><label>Block deadline for shuffle verification: <input id=verifBlocks class=blocks type=number value=40 min=1></input></label></li>
         <li><label>Block deadline for dealing: <input id=dealBlocks class=blocks type=number value=30 min=1></input></label></li>
         <li><label>Block deadline for acting: <input id=actBlocks class=blocks type=number value=30 min=1></input></label></li>
       </ul>
       <input id=createGame type=button value="Create Game"></input>
-    </div>
+    </section>
     <script src="script.js"></script>
   </body>
 </html>

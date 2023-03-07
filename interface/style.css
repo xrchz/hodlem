@@ -19,6 +19,10 @@ body {
   width: 18em;
 }
 
+.amountGwei {
+  width: 8em;
+}
+
 input[type=number].blocks {
   width: 6em;
 }
