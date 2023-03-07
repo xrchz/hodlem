@@ -97,13 +97,11 @@ struct Table:
 tables: HashMap[uint256, Table]
 nextTableId: uint256
 
-playerNextWaitingTablePtr: public(HashMap[address, HashMap[uint256, uint256]])
-playerPrevWaitingTablePtr: public(HashMap[address, HashMap[uint256, uint256]])
-playerNextLiveTablePtr: public(HashMap[address, HashMap[uint256, uint256]])
-playerPrevLiveTablePtr: public(HashMap[address, HashMap[uint256, uint256]])
-playerLastPtr: HashMap[address, uint256]
-playerTables: public(HashMap[address, HashMap[uint256, uint256]])
-tablePlayerPtr: HashMap[uint256, HashMap[address, uint256]]
+nextWaitingTable: public(HashMap[uint256, uint256])
+prevWaitingTable: public(HashMap[uint256, uint256])
+nextLiveTable: public(HashMap[uint256, uint256])
+prevLiveTable: public(HashMap[uint256, uint256])
+numSeated: HashMap[uint256, uint256]
 
 @external
 def __init__():
@@ -128,27 +126,27 @@ event EndGame:
   table: indexed(uint256)
 
 @internal
-def playerJoinTable(_player: address, _tableId: uint256, _seatIndex: uint256):
-  new: uint256 = unsafe_add(self.playerLastPtr[_player], 1)
-  self.playerLastPtr[_player] = new
-  self.playerNextWaitingTablePtr[_player][new] = self.playerNextWaitingTablePtr[_player][0]
-  self.playerNextWaitingTablePtr[_player][0] = new
-  self.playerPrevWaitingTablePtr[_player][new] = 0
-  self.playerPrevWaitingTablePtr[_player][self.playerNextWaitingTablePtr[_player][new]] = new
-  self.playerTables[_player][new] = _tableId
-  self.tablePlayerPtr[_tableId][_player] = new
-  log JoinTable(_tableId, _player, _seatIndex)
+def playerJoinTable(_tableId: uint256):
+  if self.numSeated[_tableId] == empty(uint256):
+    self.nextWaitingTable[_tableId] = self.nextWaitingTable[0]
+    self.nextWaitingTable[0] = _tableId
+    self.prevWaitingTable[_tableId] = 0
+    self.prevWaitingTable[self.nextWaitingTable[_tableId]] = _tableId
+  self.numSeated[_tableId] = unsafe_add(self.numSeated[_tableId], 1)
 
 @internal
-def playerLeaveWaiting(_player: address, _ptr: uint256):
-  self.playerNextWaitingTablePtr[_player][self.playerPrevWaitingTablePtr[_player][_ptr]] = self.playerNextWaitingTablePtr[_player][_ptr]
-  self.playerPrevWaitingTablePtr[_player][self.playerNextWaitingTablePtr[_player][_ptr]] = self.playerPrevWaitingTablePtr[_player][_ptr]
+def playerLeaveWaiting(_tableId: uint256, _num: uint256):
+  self.numSeated[_tableId] = unsafe_sub(self.numSeated[_tableId], _num)
+  if self.numSeated[_tableId] == empty(uint256):
+    self.nextWaitingTable[self.prevWaitingTable[_tableId]] = self.nextWaitingTable[_tableId]
+    self.prevWaitingTable[self.nextWaitingTable[_tableId]] = self.prevWaitingTable[_tableId]
 
 @internal
-def playerLeaveLive(_player: address, _tableId: uint256):
-  ptr: uint256 = self.tablePlayerPtr[_tableId][_player]
-  self.playerNextLiveTablePtr[_player][self.playerPrevLiveTablePtr[_player][ptr]] = self.playerNextLiveTablePtr[_player][ptr]
-  self.playerPrevLiveTablePtr[_player][self.playerNextLiveTablePtr[_player][ptr]] = self.playerPrevLiveTablePtr[_player][ptr]
+def playerLeaveLive(_tableId: uint256):
+  self.numSeated[_tableId] = unsafe_sub(self.numSeated[_tableId], 1)
+  if self.numSeated[_tableId] == empty(uint256):
+    self.nextLiveTable[self.prevLiveTable[_tableId]] = self.nextLiveTable[_tableId]
+    self.prevLiveTable[self.nextLiveTable[_tableId]] = self.prevLiveTable[_tableId]
 
 @external
 @payable
@@ -169,7 +167,8 @@ def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uin
   self.tables[tableId].config = _config
   self.tables[tableId].seats[_seatIndex] = msg.sender
   self.nextTableId = unsafe_add(tableId, 1)
-  self.playerJoinTable(msg.sender, tableId, _seatIndex)
+  self.playerJoinTable(tableId)
+  log JoinTable(tableId, msg.sender, _seatIndex)
   return tableId
 
 @external
@@ -181,7 +180,8 @@ def joinTable(_tableId: uint256, _seatIndex: uint256):
   assert msg.value == unsafe_add(
     self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn), "incorrect bond + buyIn"
   self.tables[_tableId].seats[_seatIndex] = msg.sender
-  self.playerJoinTable(msg.sender, _tableId, _seatIndex)
+  self.playerJoinTable(_tableId)
+  log JoinTable(_tableId, msg.sender, _seatIndex)
 
 @external
 def leaveTable(_tableId: uint256, _seatIndex: uint256):
@@ -189,7 +189,7 @@ def leaveTable(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   self.tables[_tableId].seats[_seatIndex] = empty(address)
   send(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
-  self.playerLeaveWaiting(msg.sender, self.tablePlayerPtr[_tableId][msg.sender])
+  self.playerLeaveWaiting(_tableId, 1)
   log LeaveTable(_tableId, msg.sender, _seatIndex)
 
 @external
@@ -198,15 +198,13 @@ def startGame(_tableId: uint256):
   for seatIndex in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
-    player: address = self.tables[_tableId].seats[seatIndex]
-    assert player != empty(address), "not enough players"
+    assert self.tables[_tableId].seats[seatIndex] != empty(address), "not enough players"
     self.tables[_tableId].present[seatIndex] = True
-    ptr: uint256 = self.tablePlayerPtr[_tableId][player]
-    self.playerLeaveWaiting(player, ptr)
-    self.playerNextLiveTablePtr[player][ptr] = self.playerNextLiveTablePtr[player][0]
-    self.playerNextLiveTablePtr[player][0] = ptr
-    self.playerPrevLiveTablePtr[player][ptr] = 0
-    self.playerPrevLiveTablePtr[player][self.playerNextLiveTablePtr[player][ptr]] = ptr
+  self.playerLeaveWaiting(_tableId, self.tables[_tableId].config.startsWith)
+  self.nextLiveTable[_tableId] = self.nextLiveTable[0]
+  self.nextLiveTable[0] = _tableId
+  self.prevLiveTable[_tableId] = 0
+  self.prevLiveTable[self.nextLiveTable[_tableId]] = _tableId
   self.tables[_tableId].phase = Phase_PREP
   self.tables[_tableId].commitBlock = block.number
   log StartGame(_tableId)
@@ -216,7 +214,7 @@ def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   player: address = self.tables[_tableId].seats[_seatIndex]
   send(player, unsafe_add(self.tables[_tableId].config.bond, _stack))
-  self.playerLeaveLive(player, _tableId)
+  self.playerLeaveLive(_tableId)
   log LeaveTable(_tableId, player, _seatIndex)
 
 @external
