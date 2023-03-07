@@ -516,6 +516,11 @@ def numPlayers(_tableId: uint256) -> uint256:
 
 @external
 @view
+def playerAt(_tableId: uint256, _seatIndex: uint256) -> address:
+  return self.tables[_tableId].seats[_seatIndex]
+
+@external
+@view
 def maxPlayers(_tableId: uint256) -> uint256:
   return self.tables[_tableId].config.untilLeft
 
