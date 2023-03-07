@@ -29,16 +29,17 @@
     </section>
     <section id=playDiv>
     </section>
-    <section id=joinDiv>
+    <section>
       <h2>Games Waiting for Players</h2>
+      <ul id=joinDiv></ul>
     </section>
     <section id=createDiv>
       <h2>New Game</h2>
       <ul>
         <li><label>Buy in: <input id=buyIn class=amount value=0.2 inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input></label></li>
         <li><label>Bond: <input id=bond class=amount value=1.0 inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input></label></li>
-        <li><label>Starts with <input id=startsWithPlayers type=number min=2 max=9 value=6></input> players</label></li>
-        <li><label>Ends with <input id=untilLeftPlayers type=number min=1 max=8 value=1></input> or fewer players left</label></li>
+        <li><label>Starts with <input id=startsWith type=number min=2 max=9 value=6></input> players</label></li>
+        <li><label>Ends with <input id=untilLeft type=number min=1 max=8 value=1></input> or fewer players left</label></li>
         <li><label>Your seat: <input id=seatIndex type=number min=0 max=8 value=0></input></label></li>
         <li><label>Structure (small blind levels): <input id=structure value="0.002 0.004 0.01 0.02 0.04 0.08 0.12" pattern="((^|\s+)(([1-9]\d*)|(\d*\.\d+)))+$"></input></label></li>
         <li><label>Blocks between levels: <input id=levelBlocks class=blocks type=number value=180 min=1></input></label></li>

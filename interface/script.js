@@ -91,22 +91,21 @@ socket.on('balance', balance => {
   balanceElement.value = balance
 })
 
-socket.on('waiting', tableId => {
-  joinDiv.appendChild(document.createElement('p')).innerText = `Waiting in ${tableId}`
-})
-
-socket.on('playing', tableId => {
-  playDiv.appendChild(document.createElement('p')).innerText = `Playing in ${tableId}`
-})
-
 socket.on('errorMsg', msg => {
   errorMsg.innerText = msg
 })
 
+socket.on('pendingGames', tableIds => {
+  joinDiv.replaceChildren()
+  tableIds.forEach(id => {
+    joinDiv.appendChild(document.createElement('li')).innerText = id
+  })
+})
+
 const buyInElement = document.getElementById('buyIn')
 const bondElement = document.getElementById('bond')
-const startsWithElement = document.getElementById('startsWithPlayers')
-const untilLeftElement = document.getElementById('untilLeftPlayers')
+const startsWithElement = document.getElementById('startsWith')
+const untilLeftElement = document.getElementById('untilLeft')
 const seatIndexElement = document.getElementById('seatIndex')
 const structureElement = document.getElementById('structure')
 const levelBlocksElement = document.getElementById('levelBlocks')
@@ -126,7 +125,8 @@ const createGameButton = document.getElementById('createGame')
 createGameButton.addEventListener('click', (e) => {
   seatIndexElement.max = startsWithElement.value - 1
   if (configElements.every(x => x.checkValidity())) {
-    socket.emit('createGame')
+    socket.emit('createGame',
+      Object.fromEntries(configElements.map(x => [x.id, x.value])))
   }
   else {
     configElements.forEach(x => x.reportValidity())
