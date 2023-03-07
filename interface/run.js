@@ -140,6 +140,7 @@ server.listen(process.env.PORT || 8080)
     socket.emit('account', socket.account.address, socket.account.privateKey)
     await refreshBalance(socket)
     if (socket.account.privateKey != '') {
+      await refreshPendingGames(socket)
       // TODO: update active games
     }
   }

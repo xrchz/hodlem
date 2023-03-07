@@ -95,6 +95,8 @@ socket.on('errorMsg', msg => {
   errorMsg.innerText = msg
 })
 
+const emptyAddress = '0x0000000000000000000000000000000000000000'
+
 socket.on('pendingGames', (configs, seats) => {
   joinDiv.replaceChildren()
   configs.forEach(config => {
@@ -102,8 +104,18 @@ socket.on('pendingGames', (configs, seats) => {
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
     const ol = li.appendChild(document.createElement('ol'))
     ol.start = 0
-    seats[config.id].forEach((addr) => {
-      ol.appendChild(document.createElement('li')).innerText = addr
+    const onTable = seats[config.id].includes(addressElement.value)
+    seats[config.id].forEach((addr, seatIndex) => {
+      const seatLi = ol.appendChild(document.createElement('li'))
+      seatLi.appendChild(document.createElement('span')).innerText = addr
+      if ((!onTable && addr === emptyAddress) || addr === addressElement.value) {
+        const button = seatLi.appendChild(document.createElement('input'))
+        button.type = 'button'
+        button.value = onTable ? 'Leave' : 'Join'
+        button.addEventListener('click', (e) => {
+          socket.emit(`${button.value.toLowerCase()}Game`, config.id, seatIndex)
+        })
+      }
     })
   })
 })
