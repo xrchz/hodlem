@@ -557,3 +557,27 @@ def numLevels(_tableId: uint256) -> uint256:
 @view
 def level(_tableId: uint256, level: uint256) -> uint256:
   return self.tables[_tableId].config.structure[level]
+
+# for off-chain viewing
+
+@external
+@view
+def configParams(_tableId: uint256) -> uint256[11]:
+  return [
+    self.tables[_tableId].config.buyIn,
+    self.tables[_tableId].config.bond,
+    self.tables[_tableId].config.startsWith,
+    self.tables[_tableId].config.untilLeft,
+    self.tables[_tableId].config.levelBlocks,
+    self.tables[_tableId].config.verifRounds,
+    self.tables[_tableId].config.prepBlocks,
+    self.tables[_tableId].config.shuffBlocks,
+    self.tables[_tableId].config.verifBlocks,
+    self.tables[_tableId].config.dealBlocks,
+    self.tables[_tableId].config.actBlocks
+  ]
+
+@external
+@view
+def configStructure(_tableId: uint256) -> DynArray[uint256, 100]:
+  return self.tables[_tableId].config.structure

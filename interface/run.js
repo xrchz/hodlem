@@ -86,9 +86,46 @@ server.listen(process.env.PORT || 8080)
     return tableIds
   }
 
+  const configKeys = [
+    'buyIn', 'bond', 'startsWith', 'untilLeft', 'levelBlocks', 'verifRounds',
+    'prepBlocks', 'shuffBlocks', 'verifBlocks', 'dealBlocks', 'actBlocks']
+
   async function refreshPendingGames(socket) {
+    const tableIds = await getPendingGames()
+    if (!('gameConfigs' in socket))
+      socket.gameConfigs = {}
+    const seats = {}
+    console.log(`querying seats for pending tables...`)
+    await Promise.all(tableIds.map(async idNum => {
+      const id = idNum.toString()
+      if (!(id in socket.gameConfigs)) {
+        console.log(`querying config for table ${id}...`)
+        const data = {id: id}
+        socket.gameConfigs[id] = data
+        data.structure = await room.configStructure(idNum)
+        ;(await room.configParams(id)).forEach((v, i) => {
+          data[configKeys[i]] = v
+        })
+        console.log('...done [config]')
+      }
+      seats[id] = []
+      for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
+        seats[id].push(await room.playerAt(idNum, seatIndex))
+      }
+    }))
+    console.log(`...done [seats]`)
     socket.emit('pendingGames',
-      (await getPendingGames()).map(id => id.toString()))
+      tableIds.map(idNum => {
+        const config = socket.gameConfigs[idNum.toString()]
+        const result = Object.fromEntries(
+          configKeys.map(k => [k, ['bond', 'buyIn'].includes(k)
+                                  ? ethers.utils.formatUnits(config[k], 'ether')
+                                  : config[k].toString()]))
+        result.id = config.id
+        result.structure = config.structure.map(x => ethers.utils.formatUnits(x, 'ether'))
+        return result
+      }),
+      seats)
   }
 
   async function refreshNetworkInfo(socket) {

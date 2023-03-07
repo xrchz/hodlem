@@ -95,10 +95,16 @@ socket.on('errorMsg', msg => {
   errorMsg.innerText = msg
 })
 
-socket.on('pendingGames', tableIds => {
+socket.on('pendingGames', (configs, seats) => {
   joinDiv.replaceChildren()
-  tableIds.forEach(id => {
-    joinDiv.appendChild(document.createElement('li')).innerText = id
+  configs.forEach(config => {
+    const li = joinDiv.appendChild(document.createElement('li'))
+    li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
+    const ol = li.appendChild(document.createElement('ol'))
+    ol.start = 0
+    seats[config.id].forEach((addr) => {
+      ol.appendChild(document.createElement('li')).innerText = addr
+    })
   })
 })
 
