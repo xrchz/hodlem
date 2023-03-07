@@ -67,7 +67,7 @@ struct Config:
   bond:        uint256             # liveness bond for each player
   startsWith:  uint256             # game can start when this many players are seated
   untilLeft:   uint256             # game ends when this many players are left
-  structure:   uint256[MAX_LEVELS] # small blind levels (right-padded with blanks)
+  structure:   DynArray[uint256, MAX_LEVELS] # small blind levels
   levelBlocks: uint256             # blocks between levels
   verifRounds: uint256             # number of shuffle verifications required
   prepBlocks:  uint256             # blocks to submit deck preparation
@@ -119,11 +119,17 @@ interface RoomManager:
     def cardAt(_tableId: uint256, _deckIndex: uint256) -> uint256: view
     def deckIndex(_tableId: uint256) -> uint256: view
     def numPlayers(_tableId: uint256) -> uint256: view
+    def playerAt(_tableId: uint256, _seatIndex: uint256) -> address: view
     def maxPlayers(_tableId: uint256) -> uint256: view
     def buyIn(_tableId: uint256) -> uint256: view
     def actBlocks(_tableId: uint256) -> uint256: view
     def levelBlocks(_tableId: uint256) -> uint256: view
+    def numLevels(_tableId: uint256) -> uint256: view
     def level(_tableId: uint256, level: uint256) -> uint256: view
+    def nextWaitingTable(arg0: uint256) -> uint256: view
+    def prevWaitingTable(arg0: uint256) -> uint256: view
+    def nextLiveTable(arg0: uint256) -> uint256: view
+    def prevLiveTable(arg0: uint256) -> uint256: view
 
 T: immutable(RoomManager)
 
@@ -544,19 +550,10 @@ def roundNextActor(_numPlayers: uint256, _gameId: uint256, _seatIndex: uint256) 
 @internal
 @view
 def smallBlind(_tableId: uint256) -> uint256:
-  gameId: uint256 = T.gameId(_tableId)
-  levelBlocks: uint256 = T.levelBlocks(_tableId)
-  level: uint256 = empty(uint256)
-  if self.games[gameId].startBlock + MAX_LEVELS * levelBlocks < block.number:
-    level = ((block.number - self.games[gameId].startBlock) / levelBlocks)
-  else:
-    level = MAX_LEVELS - 1
-  for _ in range(MAX_LEVELS):
-    if T.level(_tableId, level) == empty(uint256):
-      level -= 1
-    else:
-      break
-  return T.level(_tableId, level)
+  return T.level(_tableId,
+    min(unsafe_sub(T.numLevels(_tableId), 1),
+        unsafe_div(unsafe_sub(block.number, self.games[T.gameId(_tableId)].startBlock),
+                   T.levelBlocks(_tableId))))
 
 @internal
 def placeBet(_gameId: uint256, _seatIndex: uint256, _size: uint256):

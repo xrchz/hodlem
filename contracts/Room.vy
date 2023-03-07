@@ -71,7 +71,7 @@ struct Config:
   bond:        uint256             # liveness bond for each player
   startsWith:  uint256             # game can start when this many players are seated
   untilLeft:   uint256             # game ends when this many players are left
-  structure:   uint256[100]        # small blind levels (right-padded with blanks)
+  structure:   DynArray[uint256, 100] # small blind levels
   levelBlocks: uint256             # blocks between levels
   verifRounds: uint256             # number of shuffle verifications required
   prepBlocks:  uint256             # blocks to submit deck preparation
@@ -148,6 +148,15 @@ def playerLeaveLive(_tableId: uint256):
     self.nextLiveTable[self.prevLiveTable[_tableId]] = self.nextLiveTable[_tableId]
     self.prevLiveTable[self.nextLiveTable[_tableId]] = self.prevLiveTable[_tableId]
 
+@internal
+@pure
+def ascending(_a: DynArray[uint256, 100]) -> bool:
+  x: uint256 = 0
+  for y in _a:
+    if y <= x:
+      return False
+  return True
+
 @external
 @payable
 def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
@@ -155,7 +164,7 @@ def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uin
   assert _config.startsWith <= MAX_SEATS, "invalid startsWith"
   assert _config.untilLeft < _config.startsWith, "invalid untilLeft"
   assert 0 < _config.untilLeft, "invalid untilLeft"
-  assert 0 < _config.structure[0], "invalid structure"
+  assert 0 < len(_config.structure) and self.ascending(_config.structure), "invalid structure"
   assert 0 < _config.buyIn, "invalid buyIn"
   assert _seatIndex < _config.startsWith, "invalid seatIndex"
   assert _config.startsWith * (_config.bond + _config.buyIn) <= max_value(uint256), "amounts too large"
@@ -538,6 +547,11 @@ def actBlocks(_tableId: uint256) -> uint256:
 @view
 def levelBlocks(_tableId: uint256) -> uint256:
   return self.tables[_tableId].config.levelBlocks
+
+@external
+@view
+def numLevels(_tableId: uint256) -> uint256:
+  return len(self.tables[_tableId].config.structure)
 
 @external
 @view
