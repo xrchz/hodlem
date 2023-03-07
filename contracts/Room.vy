@@ -107,6 +107,10 @@ numSeated: HashMap[uint256, uint256]
 def __init__():
   self.nextTableId = 1
 
+@internal
+def forceSend(_to: address, _amount: uint256) -> bool:
+  return raw_call(_to, b"", value=_amount, revert_on_failure=False)
+
 # lobby
 
 event JoinTable:
@@ -197,7 +201,7 @@ def leaveTable(_tableId: uint256, _seatIndex: uint256):
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
   self.tables[_tableId].seats[_seatIndex] = empty(address)
-  send(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
+  self.forceSend(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
   self.playerLeaveWaiting(_tableId, 1)
   log LeaveTable(_tableId, msg.sender, _seatIndex)
 
@@ -222,7 +226,7 @@ def startGame(_tableId: uint256):
 def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   player: address = self.tables[_tableId].seats[_seatIndex]
-  send(player, unsafe_add(self.tables[_tableId].config.bond, _stack))
+  self.forceSend(player, unsafe_add(self.tables[_tableId].config.bond, _stack))
   self.playerLeaveLive(_tableId)
   log LeaveTable(_tableId, player, _seatIndex)
 
@@ -290,12 +294,12 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
 def failChallenge(_tableId: uint256, _challIndex: uint256):
   perPlayer: uint256 = unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn)
   # burn the offender's bond + buyIn
-  send(empty(address), perPlayer)
+  self.forceSend(empty(address), perPlayer)
   self.tables[_tableId].seats[_challIndex] = empty(address)
   # refund the others' bonds and buyIns
   for playerId in self.tables[_tableId].seats:
     if playerId != empty(address):
-      send(playerId, perPlayer)
+      self.forceSend(playerId, perPlayer)
   # delete the game
   self.tables[_tableId] = empty(Table)
 
