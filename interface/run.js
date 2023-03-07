@@ -259,6 +259,23 @@ server.listen(process.env.PORT || 8080)
         socket.emit('errorMsg', e.toString())
       }
     })
+
+    socket.on('startGame', async tableId => {
+      try {
+        console.log(`sending startGame transaction...`)
+        const response = await room.connect(socket.account).startGame(
+          tableId, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          })
+        console.log(`awaiting receipt... [start]`)
+        const receipt = await response.wait()
+        console.log(`...done [start]`)
+      }
+      catch (e) {
+        socket.emit('errorMsg', e.toString())
+      }
+    })
   })
 
 })()

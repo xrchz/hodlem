@@ -117,6 +117,14 @@ socket.on('pendingGames', (configs, seats) => {
         })
       }
     })
+    if (!seats[config.id].includes(emptyAddress)) {
+      const button = li.appendChild(document.createElement('input'))
+      button.type = 'button'
+      button.value = 'Start'
+      button.addEventListener('click', (e) => {
+        socket.emit('startGame', config.id)
+      })
+    }
   })
 })
 
