@@ -224,6 +224,41 @@ server.listen(process.env.PORT || 8080)
         socket.emit('errorMsg', e.toString())
       }
     })
+
+    socket.on('leaveGame', async (tableId, seatIndex) => {
+      try {
+        console.log(`sending leaveGame transaction...`)
+        const response = await room.connect(socket.account).leaveTable(
+          tableId, seatIndex, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          })
+        console.log(`awaiting receipt... [leave]`)
+        const receipt = await response.wait()
+        console.log(`...done [leave]`)
+      }
+      catch (e) {
+        socket.emit('errorMsg', e.toString())
+      }
+    })
+
+    socket.on('joinGame', async (tableId, seatIndex) => {
+      try {
+        console.log(`sending joinGame transaction...`)
+        const response = await room.connect(socket.account).joinTable(
+          tableId, seatIndex, {
+            value: socket.gameConfigs[tableId].bond.add(socket.gameConfigs[tableId].buyIn),
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          })
+        console.log(`awaiting receipt... [join]`)
+        const receipt = await response.wait()
+        console.log(`...done [join]`)
+      }
+      catch (e) {
+        socket.emit('errorMsg', e.toString())
+      }
+    })
   })
 
 })()
