@@ -109,7 +109,7 @@ def __init__():
 
 @internal
 def forceSend(_to: address, _amount: uint256) -> bool:
-  return raw_call(_to, b"", value=_amount, revert_on_failure=False)
+  return raw_call(_to, b"", value=_amount, gas=0, revert_on_failure=False)
 
 # lobby
 
