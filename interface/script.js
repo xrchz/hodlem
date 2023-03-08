@@ -128,12 +128,16 @@ socket.on('pendingGames', (configs, seats) => {
   })
 })
 
-socket.on('activeGames', (configs, seatIndices) => {
+const phases = ['NONE', 'JOIN', 'PREP', 'SHUF', 'DEAL', 'PLAY', 'SHOW']
+
+socket.on('activeGames', (configs, data) => {
   playDiv.replaceChildren()
   configs.forEach(config => {
     const li = playDiv.appendChild(document.createElement('li'))
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
-    li.appendChild(document.createElement('p')).innerText = `Your seat: ${seatIndices[config.id]}`
+    const ul = li.appendChild(document.createElement('ul'))
+    ul.appendChild(document.createElement('li')).innerText = `Your seat: ${data[config.id].seatIndex}`
+    ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[data[config.id].phase]}`
   })
 })
 

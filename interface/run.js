@@ -143,7 +143,10 @@ async function refreshActiveGames(socket) {
     if (!(id in socket.activeGames)) {
       for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
         if (await room.playerAt(idNum, seatIndex) === socket.account.address) {
-          socket.activeGames[id] = seatIndex
+          socket.activeGames[id] = {
+            seatIndex: seatIndex,
+            phase: (await room.phase(idNum)).toNumber()
+          }
           break
         }
       }
