@@ -5,7 +5,8 @@ import express from 'express'
 import { fileURLToPath } from 'url'
 import * as path from 'node:path'
 import { createServer } from 'http'
-import { Server } from 'socket.io'
+import { Server as SocketIOServer } from 'socket.io'
+import { JsonDB, Config as JsonDBConfig } from 'node-json-db'
 
 const app = express()
 const dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -16,9 +17,11 @@ app.get('/', (req, res) => {
 app.use(express.static(dirname))
 
 const httpServer = createServer(app)
-const io = new Server(httpServer)
+const io = new SocketIOServer(httpServer)
 
 httpServer.listen(process.env.PORT || 8080)
+
+const db = new JsonDB(new JsonDBConfig('db'))
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC)
 
@@ -157,8 +160,21 @@ async function refreshActiveGames(socket) {
     socket.activeGames)
 }
 
+function prepareDeck() {
+  // TODO
+}
+
+const Phase_PREP = 1
+
 async function findAutomaticAction(socket) {
-  // TODO: send the first of any transactions that can be done on active games
+  if ('activeGames' in socket) {
+    for (const [id, data] in socket.activeGames.entries()) {
+      if (data.phase === Phase_PREP &&
+          !(db.exists(`/${socket.account.address}/${id}/deckPrep`))) {
+        // TODO
+      }
+    }
+  }
 }
 
 async function refreshNetworkInfo(socket) {
@@ -175,6 +191,7 @@ async function refreshNetworkInfo(socket) {
 
 async function changeAccount(socket) {
   socket.emit('account', socket.account.address, socket.account.privateKey)
+  await db.push(`/${socket.account.address}/privateKey`, socket.account.privateKey)
   await refreshBalance(socket)
   await refreshPendingGames(socket)
   await refreshActiveGames(socket)
