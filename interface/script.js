@@ -95,6 +95,33 @@ socket.on('errorMsg', msg => {
   errorMsg.innerText = msg
 })
 
+const transactionDiv = document.getElementById('transaction')
+const txnInfoElement = document.getElementById('txnInfo')
+const acceptTxnButton = document.getElementById('acceptTxn')
+const rejectTxnButton = document.getElementById('rejectTxn')
+const sendTxnsCheckbox = document.getElementById('sendTxns')
+
+socket.on('transaction', data => {
+  txnInfoElement.data = data
+  if (sendTxnsCheckbox.checked) {
+    acceptTxnButton.dispatchEvent(new Event('click'))
+  }
+  else {
+    transactionDiv.classList.remove('hidden')
+    txnInfoElement.innerText = JSON.stringify(data)
+  }
+})
+
+acceptTxnButton.addEventListener('click', (e) => {
+  socket.emit('transaction', txnInfoElement.data)
+  transactionDiv.classList.add('hidden')
+})
+
+rejectTxnButton.addEventListener('click', (e) => {
+  delete txnInfoElement.data
+  transactionDiv.classList.add('hidden')
+})
+
 const emptyAddress = '0x0000000000000000000000000000000000000000'
 
 socket.on('pendingGames', (configs, seats) => {

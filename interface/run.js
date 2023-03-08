@@ -157,14 +157,20 @@ async function refreshActiveGames(socket) {
     socket.activeGames)
 }
 
+async function findAutomaticAction(socket) {
+  // TODO: send the first of any transactions that can be done on active games
+}
+
 async function refreshNetworkInfo(socket) {
   await refreshBalance(socket)
   await refreshFeeData(socket)
   if (!('hidePending' in socket)) {
     await refreshPendingGames(socket)
   }
-  if ('account' in socket)
+  if ('account' in socket) {
     await refreshActiveGames(socket)
+    await findAutomaticAction(socket)
+  }
 }
 
 async function changeAccount(socket) {
@@ -216,20 +222,29 @@ io.on('connection', async socket => {
     }
   })
 
+  socket.on('transaction', async tx => {
+    try {
+      console.log('sending transaction...')
+      const response = await socket.account.sendTransaction(tx)
+      console.log(`awaiting receipt... [txn]`)
+      const receipt = await response.wait()
+      console.log(`...done [txn]`)
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
   socket.on('send', async (to, amount) => {
     try {
-      const tx = {
-        to: to,
-        type: 2,
-        maxFeePerGas: socket.feeData.maxFeePerGas,
-        maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas,
-        value: ethers.utils.parseEther(amount)
-      }
-      console.log(`sending ${amount} to ${to} from ${socket.account.address}...`)
-      const response = await socket.account.sendTransaction(tx)
-      console.log(`awaiting receipt... [send]`)
-      const receipt = await response.wait()
-      console.log(`...done [send]`)
+      socket.emit('transaction',
+        await socket.account.populateTransaction({
+          to: to,
+          type: 2,
+          maxFeePerGas: socket.feeData.maxFeePerGas,
+          maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas,
+          value: ethers.utils.parseEther(amount)
+        }))
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
@@ -243,16 +258,14 @@ io.on('connection', async socket => {
       config.bond = ethers.utils.parseEther(config.bond)
       config.gameAddress = game.address
       config.structure = config.structure.split(/\s/).map(x => ethers.utils.parseEther(x))
-      console.log(`sending createGame transaction...`)
-      const response = await room.connect(socket.account).createTable(
-        seatIndex, config, deck.address, {
-          value: config.buyIn.add(config.bond),
-          maxFeePerGas: socket.feeData.maxFeePerGas,
-          maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-        })
-      console.log(`awaiting receipt... [create]`)
-      const receipt = await response.wait()
-      console.log(`...done [create]`)
+      socket.emit('transaction',
+        await room.connect(socket.account).populateTransaction
+        .createTable(
+          seatIndex, config, deck.address, {
+            value: config.buyIn.add(config.bond),
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
@@ -261,15 +274,13 @@ io.on('connection', async socket => {
 
   socket.on('leaveGame', async (tableId, seatIndex) => {
     try {
-      console.log(`sending leaveGame transaction...`)
-      const response = await room.connect(socket.account).leaveTable(
-        tableId, seatIndex, {
-          maxFeePerGas: socket.feeData.maxFeePerGas,
-          maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-        })
-      console.log(`awaiting receipt... [leave]`)
-      const receipt = await response.wait()
-      console.log(`...done [leave]`)
+      socket.emit('transaction',
+        await room.connect(socket.account).populateTransaction
+        .leaveTable(
+          tableId, seatIndex, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
@@ -278,16 +289,14 @@ io.on('connection', async socket => {
 
   socket.on('joinGame', async (tableId, seatIndex) => {
     try {
-      console.log(`sending joinGame transaction...`)
-      const response = await room.connect(socket.account).joinTable(
-        tableId, seatIndex, {
-          value: socket.gameConfigs[tableId].bond.add(socket.gameConfigs[tableId].buyIn),
-          maxFeePerGas: socket.feeData.maxFeePerGas,
-          maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-        })
-      console.log(`awaiting receipt... [join]`)
-      const receipt = await response.wait()
-      console.log(`...done [join]`)
+      socket.emit('transaction',
+        await room.connect(socket.account).populateTransaction
+        .joinTable(
+          tableId, seatIndex, {
+            value: socket.gameConfigs[tableId].bond.add(socket.gameConfigs[tableId].buyIn),
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
@@ -296,15 +305,13 @@ io.on('connection', async socket => {
 
   socket.on('startGame', async tableId => {
     try {
-      console.log(`sending startGame transaction...`)
-      const response = await room.connect(socket.account).startGame(
-        tableId, {
-          maxFeePerGas: socket.feeData.maxFeePerGas,
-          maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-        })
-      console.log(`awaiting receipt... [start]`)
-      const receipt = await response.wait()
-      console.log(`...done [start]`)
+      socket.emit('transaction',
+        await room.connect(socket.account).populateTransaction
+        .startGame(
+          tableId, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())

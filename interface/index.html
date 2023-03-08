@@ -10,6 +10,12 @@
   <body>
     <p id=errorMsg></p>
     <section id=networkDiv>
+      <div id=transaction class=hidden>
+        <p id=txnInfo></p>
+        <input id=acceptTxn type=button value=Send></input>
+        <input id=rejectTxn type=button value=Cancel></input>
+      </div>
+      <label>Automatically send transactions: <input id=sendTxns type=checkbox checked=true></input></label>
       <input id=resetFees type=button value=Reset></input>
       <label>Max fee per gas: <input id=maxFeePerGas class=amountGwei inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input> gwei</label>
       <label>Max priority fee per gas: <input id=maxPriorityFeePerGas class=amountGwei inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input> gwei</label>
