@@ -146,6 +146,12 @@ def playerLeaveWaiting(_tableId: uint256, _num: uint256):
     self.prevWaitingTable[self.nextWaitingTable[_tableId]] = self.prevWaitingTable[_tableId]
 
 @internal
+def playerLeaveLive(_tableId: uint256, _player: address, _seatIndex: uint256):
+  self.nextLiveTable[_player][self.prevLiveTable[_player][_tableId]] = self.nextLiveTable[_player][_tableId]
+  self.prevLiveTable[_player][self.nextLiveTable[_player][_tableId]] = self.prevLiveTable[_player][_tableId]
+  log LeaveTable(_tableId, _player, _seatIndex)
+
+@internal
 @pure
 def ascending(_a: DynArray[uint256, 100]) -> bool:
   x: uint256 = 0
@@ -221,9 +227,7 @@ def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   player: address = self.tables[_tableId].seats[_seatIndex]
   self.forceSend(player, unsafe_add(self.tables[_tableId].config.bond, _stack))
-  self.nextLiveTable[player][self.prevLiveTable[player][_tableId]] = self.nextLiveTable[player][_tableId]
-  self.prevLiveTable[player][self.nextLiveTable[player][_tableId]] = self.prevLiveTable[player][_tableId]
-  log LeaveTable(_tableId, player, _seatIndex)
+  self.playerLeaveLive(_tableId, player, _seatIndex)
 
 @external
 def deleteTable(_tableId: uint256):
@@ -289,12 +293,17 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
 def failChallenge(_tableId: uint256, _challIndex: uint256):
   perPlayer: uint256 = unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn)
   # burn the offender's bond + buyIn
-  self.forceSend(empty(address), perPlayer)
-  self.tables[_tableId].seats[_challIndex] = empty(address)
   # refund the others' bonds and buyIns
-  for playerId in self.tables[_tableId].seats:
-    if playerId != empty(address):
-      self.forceSend(playerId, perPlayer)
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == self.tables[_tableId].config.startsWith:
+      break
+    player: address = self.tables[_tableId].seats[seatIndex]
+    if seatIndex == _challIndex:
+      self.forceSend(empty(address), perPlayer)
+    else:
+      self.forceSend(player, perPlayer)
+    # leave the table
+    self.playerLeaveLive(_tableId, player, seatIndex)
   # delete the game
   self.tables[_tableId] = empty(Table)
 
