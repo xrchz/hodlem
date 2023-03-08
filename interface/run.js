@@ -1,5 +1,4 @@
-import { config } from 'dotenv'
-config()
+import 'dotenv/config'
 import * as fs from 'node:fs'
 import { ethers } from 'ethers'
 import express from 'express'
