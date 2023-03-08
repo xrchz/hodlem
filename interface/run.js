@@ -2,15 +2,18 @@ import 'dotenv/config'
 import * as fs from 'node:fs'
 import { ethers } from 'ethers'
 import express from 'express'
+import { fileURLToPath } from 'url'
+import * as path from 'node:path'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 
 const app = express()
+const dirname = path.dirname(fileURLToPath(import.meta.url))
 
 app.get('/', (req, res) => {
-  res.sendFile(`${import.meta.url}/index.html`)
+  res.sendFile(`${dirname}/index.html`)
 })
-app.use(express.static(import.meta.url))
+app.use(express.static(dirname))
 
 const httpServer = createServer(app)
 const io = new Server(httpServer)
