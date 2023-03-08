@@ -128,6 +128,15 @@ socket.on('pendingGames', (configs, seats) => {
   })
 })
 
+socket.on('activeGames', (configs, seatIndices) => {
+  playDiv.replaceChildren()
+  configs.forEach(config => {
+    const li = playDiv.appendChild(document.createElement('li'))
+    li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
+    li.appendChild(document.createElement('p')).innerText = `Your seat: ${seatIndices[config.id]}`
+  })
+})
+
 const buyInElement = document.getElementById('buyIn')
 const bondElement = document.getElementById('bond')
 const startsWithElement = document.getElementById('startsWith')

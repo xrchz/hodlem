@@ -74,13 +74,13 @@ server.listen(process.env.PORT || 8080)
     return tableIds
   }
 
-  async function getActiveGames() {
-    console.log('querying active games...')
+  async function getActiveGames(socket) {
+    console.log(`querying active games for ${socket.account.address}...`)
     const tableIds = []
-    let id = await room.nextLiveTable(0)
+    let id = await room.nextLiveTable(socket.account.address, 0)
     while (!ethers.BigNumber.from(id).isZero()) {
       tableIds.push(id)
-      id = await room.nextLiveTable(id)
+      id = await room.nextLiveTable(socket.account.address, id)
     }
     console.log('...done [active]')
     return tableIds
@@ -90,12 +90,9 @@ server.listen(process.env.PORT || 8080)
     'buyIn', 'bond', 'startsWith', 'untilLeft', 'levelBlocks', 'verifRounds',
     'prepBlocks', 'shuffBlocks', 'verifBlocks', 'dealBlocks', 'actBlocks']
 
-  async function refreshPendingGames(socket) {
-    const tableIds = await getPendingGames()
+  async function getGameConfigs(socket, tableIds) {
     if (!('gameConfigs' in socket))
       socket.gameConfigs = {}
-    const seats = {}
-    console.log(`querying seats for pending tables...`)
     await Promise.all(tableIds.map(async idNum => {
       const id = idNum.toString()
       if (!(id in socket.gameConfigs)) {
@@ -106,8 +103,24 @@ server.listen(process.env.PORT || 8080)
         ;(await room.configParams(id)).forEach((v, i) => {
           data[configKeys[i]] = v
         })
+        data.formatted = Object.fromEntries(
+          configKeys.map(k => [k, ['bond', 'buyIn'].includes(k)
+                                  ? ethers.utils.formatUnits(data[k], 'ether')
+                                  : data[k].toString()]))
+        data.formatted.id = data.id
+        data.formatted.structure = data.structure.map(x => ethers.utils.formatUnits(x, 'ether'))
         console.log('...done [config]')
       }
+    }))
+  }
+
+  async function refreshPendingGames(socket) {
+    const tableIds = await getPendingGames()
+    await getGameConfigs(socket, tableIds)
+    const seats = {}
+    console.log(`querying seats for pending tables...`)
+    await Promise.all(tableIds.map(async idNum => {
+      const id = idNum.toString()
       seats[id] = []
       for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
         seats[id].push(await room.playerAt(idNum, seatIndex))
@@ -115,42 +128,59 @@ server.listen(process.env.PORT || 8080)
     }))
     console.log(`...done [seats]`)
     socket.emit('pendingGames',
-      tableIds.map(idNum => {
-        const config = socket.gameConfigs[idNum.toString()]
-        const result = Object.fromEntries(
-          configKeys.map(k => [k, ['bond', 'buyIn'].includes(k)
-                                  ? ethers.utils.formatUnits(config[k], 'ether')
-                                  : config[k].toString()]))
-        result.id = config.id
-        result.structure = config.structure.map(x => ethers.utils.formatUnits(x, 'ether'))
-        return result
-      }),
+      tableIds.map(idNum => socket.gameConfigs[idNum.toString()].formatted),
       seats)
+  }
+
+  async function refreshActiveGames(socket) {
+    const tableIds = await getActiveGames(socket)
+    await getGameConfigs(socket, tableIds)
+    if (!('activeGames' in socket))
+      socket.activeGames = {}
+    await Promise.all(tableIds.map(async idNum => {
+      const id = idNum.toString()
+      if (!(id in socket.activeGames)) {
+        for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
+          if (await room.playerAt(idNum, seatIndex) === socket.account.address) {
+            socket.activeGames[id] = seatIndex
+            break
+          }
+        }
+      }
+    }))
+    socket.emit('activeGames',
+      tableIds.map(idNum => socket.gameConfigs[idNum.toString()].formatted),
+      socket.activeGames)
   }
 
   async function refreshNetworkInfo(socket) {
     await refreshBalance(socket)
     await refreshFeeData(socket)
-    if (!('playing' in socket)) {
+    if (!('hidePending' in socket)) {
       await refreshPendingGames(socket)
     }
+    if ('account' in socket)
+      await refreshActiveGames(socket)
   }
 
   async function changeAccount(socket) {
     socket.emit('account', socket.account.address, socket.account.privateKey)
     await refreshBalance(socket)
-    if (socket.account.privateKey != '') {
-      await refreshPendingGames(socket)
-      // TODO: update active games
-    }
+    await refreshPendingGames(socket)
+    await refreshActiveGames(socket)
   }
 
   io.on('connection', async socket => {
     await refreshNetworkInfo(socket)
 
     socket.on('newAccount', async () => {
-      socket.account = ethers.Wallet.createRandom().connect(provider)
-      await changeAccount(socket)
+      try {
+        socket.account = ethers.Wallet.createRandom().connect(provider)
+        await changeAccount(socket)
+      }
+      catch (e) {
+        socket.emit('errorMsg', e.toString())
+      }
     })
 
     provider.on('block', async blockNumber => {
@@ -175,11 +205,11 @@ server.listen(process.env.PORT || 8080)
     socket.on('privkey', async privkey => {
       try {
         socket.account = new ethers.Wallet(privkey, provider)
+        await changeAccount(socket)
       }
-      catch {
-        socket.account = {address: '', privateKey: ''}
+      catch (e) {
+        socket.emit('errorMsg', e.toString())
       }
-      await changeAccount(socket)
     })
 
     socket.on('send', async (to, amount) => {
