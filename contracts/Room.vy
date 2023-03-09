@@ -597,6 +597,10 @@ def phase(_tableId: uint256) -> uint256:
 
 @external
 @view
-def hasSubmittedPrep(_tableId: uint256, _seatIndex: uint256) -> bool:
-  return self.tables[_tableId].deck.hasSubmittedPrep(
-    self.tables[_tableId].deckId, _seatIndex)
+def deckId(_tableId: uint256) -> uint256:
+  return self.tables[_tableId].deckId
+
+@external
+@view
+def commitBlock(_tableId: uint256) -> uint256:
+  return self.tables[_tableId].commitBlock

@@ -301,6 +301,11 @@ def challengeActive(_id: uint256, _playerIdx: uint256) -> bool:
 
 @external
 @view
+def challengeRnd(_id: uint256) -> uint256:
+  return self.decks[_id].challengeRnd
+
+@external
+@view
 def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256:
   return unsafe_sub(len(self.decks[_id].cards[_cardIdx].c), 1)
 
