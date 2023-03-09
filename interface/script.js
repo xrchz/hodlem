@@ -167,14 +167,15 @@ const phases = ['NONE', 'JOIN', 'PREP', 'SHUF', 'DEAL', 'PLAY', 'SHOW']
 socket.on('activeGames', (configs, data) => {
   playDiv.replaceChildren()
   configs.forEach(config => {
+    const di = data[config.id]
     const li = playDiv.appendChild(document.createElement('li'))
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
     const ul = li.appendChild(document.createElement('ul'))
-    ul.appendChild(document.createElement('li')).innerText = `Your seat: ${data[config.id].seatIndex}`
-    ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[data[config.id].phase]}`
-    if (phases[data[config.id].phase] === 'PREP') {
-      if (data[config.id].waitingOn.length) {
-        ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(data[config.id].waitingOn)}`
+    ul.appendChild(document.createElement('li')).innerText = `Your seat: ${di.seatIndex}`
+    ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[di.phase]}`
+    if (phases[di.phase] === 'PREP') {
+      if (di.waitingOn.length) {
+        ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
       }
       else {
         const button = li.appendChild(document.createElement('input'))
@@ -183,6 +184,30 @@ socket.on('activeGames', (configs, data) => {
         button.addEventListener('click', _ => {
           socket.emit('finishPrep', config.id)
         })
+      }
+    }
+    if (phases[di.phase] === 'SHUF') {
+      if (di.shuffleCount < config.startsWith) {
+        ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${di.shuffleCount}`
+        if (di.shuffleCount === di.seatIndex) {
+          const button = li.appendChild(document.createElement('input'))
+          button.type = 'button'
+          button.value = 'Submit Your Shuffle'
+          button.addEventListener('click', _ => {
+            socket.emit('submitShuffle', config.id)
+          })
+        }
+      }
+      else {
+        ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+        if (di.waitingOn.includes(di.seatIndex)) {
+          const button = li.appendChild(document.createElement('input'))
+          button.type = 'button'
+          button.value = 'Verify Your Shuffle'
+          button.addEventListener('click', _ => {
+            socket.emit('submitVerif', config.id)
+          })
+        }
       }
     }
   })

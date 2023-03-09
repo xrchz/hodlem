@@ -92,6 +92,10 @@ async function getActiveGames(socket) {
 }
 
 const Phase_PREP = 2
+const Phase_SHUF = 3
+const Phase_DEAL = 4
+const Phase_PLAY = 5
+const Phase_SHOW = 6
 
 const configKeys = [
   'buyIn', 'bond', 'startsWith', 'untilLeft', 'levelBlocks', 'verifRounds',
@@ -113,7 +117,7 @@ async function getGameConfigs(socket, tableIds) {
       data.formatted = Object.fromEntries(
         configKeys.map(k => [k, ['bond', 'buyIn'].includes(k)
                                 ? ethers.utils.formatUnits(data[k], 'ether')
-                                : data[k].toString()]))
+                                : data[k].toNumber()]))
       data.formatted.id = data.id
       data.formatted.structure = data.structure.map(x => ethers.utils.formatUnits(x, 'ether'))
       console.log('...done [config]')
@@ -151,7 +155,7 @@ async function refreshActiveGames(socket) {
         if (await room.playerAt(idNum, seatIndex) === socket.account.address) {
           socket.activeGames[id] = {
             seatIndex: seatIndex,
-            phase: (await room.phase(idNum)).toNumber()
+            deckId: await room.deckId(idNum),
           }
           break
         }
@@ -159,10 +163,22 @@ async function refreshActiveGames(socket) {
     }
   }))
   for (const [id, data] of Object.entries(socket.activeGames)) {
+    console.log(`processing ${id}`)
+    data.phase = (await room.phase(id)).toNumber(),
+    data.commitBlock = (await room.commitBlock(id)).toNumber()
     if (data.phase === Phase_PREP) {
       data.waitingOn = []
       for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
-        if (!(await room.hasSubmittedPrep(id, seatIndex))) {
+        if (!(await deck.hasSubmittedPrep(data.deckId, seatIndex))) {
+          data.waitingOn.push(seatIndex)
+        }
+      }
+    }
+    if (data.phase === Phase_SHUF) {
+      data.shuffleCount = (await deck.shuffleCount(data.deckId)).toNumber()
+      data.waitingOn = []
+      for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
+        if (await deck.challengeActive(data.deckId, seatIndex)) {
           data.waitingOn.push(seatIndex)
         }
       }
@@ -243,13 +259,21 @@ function prepareDeck() {
   return {cards: cards, secrets: secrets}
 }
 
+async function shuffle(socket, tableId) {
+  // TODO
+}
+
+async function verifyShuffle(socket, tableId) {
+  // TODO
+}
+
 async function findAutomaticAction(socket) {
   if ('activeGames' in socket) {
     console.log(`looking for auto actions for ${socket.account.address}`)
     for (const [id, data] of Object.entries(socket.activeGames)) {
-      console.log(`looking for auto actions for ${id} ${JSON.stringify(data)}...`)
+      console.log(`...auto actions for ${id} ${JSON.stringify(data)}...`)
       if (data.phase === Phase_PREP &&
-          !(await room.hasSubmittedPrep(id, data.seatIndex))) {
+          !(await deck.hasSubmittedPrep(data.deckId, data.seatIndex))) {
         console.log('doing deckPrep...')
         const deckPrep = prepareDeck()
         await db.push(`/${socket.account.address}/${id}/deckPrep`,
@@ -332,6 +356,7 @@ io.on('connection', async socket => {
   socket.on('transaction', async tx => {
     try {
       console.log('sending transaction...')
+      console.log(JSON.stringify(tx))
       const response = await socket.account.sendTransaction(tx)
       console.log(`awaiting receipt... [txn]`)
       const receipt = await response.wait()
@@ -425,7 +450,56 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('finishPrep', tableId => {
-    socket.emit('errorMsg', 'finish prep not implemented yet')
+  socket.on('finishPrep', async tableId => {
+    try {
+      socket.emit('requestTransaction',
+        await room.connect(socket.account).populateTransaction
+        .finishDeckPrep(
+          tableId, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
+  socket.on('submitShuffle', async tableId => {
+    try {
+      await shuffle(socket, tableId)
+      socket.emit('requestTransaction',
+        await room.connect(socket.account).populateTransaction
+        .submitShuffle(
+          tableId, socket.activeGames[tableId].seatIndex,
+          socket.activeGames[tableId].shuffle,
+          socket.activeGames[tableId].commitment,
+          {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
+  socket.on('submitVerif', async tableId => {
+    try {
+      await verifyShuffle(socket, tableId)
+      socket.emit('requestTransaction',
+        await room.connect(socket.account).populateTransaction
+        .submitVerif(
+          tableId, socket.activeGames[tableId].seatIndex,
+          socket.activeGames[tableId].scalars,
+          socket.activeGames[tableId].permutations,
+          {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
   })
 })
