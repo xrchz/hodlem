@@ -7,6 +7,7 @@ import * as path from 'node:path'
 import { createServer } from 'http'
 import { Server as SocketIOServer } from 'socket.io'
 import { JsonDB, Config as JsonDBConfig } from 'node-json-db'
+import { bn254 } from '@noble/curves/bn'
 
 const app = express()
 const dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -160,18 +161,98 @@ async function refreshActiveGames(socket) {
     socket.activeGames)
 }
 
-function prepareDeck() {
-  // TODO
+function randomPoint() {
+  return bn254.ProjectivePoint.fromPrivateKey(bn254.utils.randomPrivateKey())
 }
 
-const Phase_PREP = 1
+function randomScalar() {
+  return bn254.utils.normPrivateKeyToScalar(bn254.utils.randomPrivateKey())
+}
+
+function uint256ToBytes(n) {
+  const s = n.toString(16)
+  const h = s.padStart(64, '0')
+  const b = new Uint8Array(32)
+  let i = 0
+  // TODO: check endianness in vyper
+  while (i < 64) {
+    b[i/2] = parseInt(h.slice(i, i+2), 16)
+    i += 2
+  }
+  return b
+}
+
+function bytesToUint256(a) {
+  // TODO: check endianness
+  return BigInt(`0x${Array.from(a).map(i => i.toString(16).padStart(2, '0')).join('')}`)
+}
+
+function pointToUints(p) {
+  const a = p.toAffine()
+  return [a.x, a.y]
+}
+
+function pointToBytes(p) {
+  const byteArrs = pointToUints(p).map(n => uint256ToBytes(n))
+  const r = new Uint8Array(64)
+  r.set(byteArrs[0], 0)
+  r.set(byteArrs[1], 32)
+  return r
+}
+
+function prepareDeck() {
+  const cards = []
+  const secrets = []
+  for (const i of Array(53).keys()) {
+    const g = randomPoint()
+    const h = randomPoint()
+    const x = randomScalar()
+    const gx = g.multiply(x)
+    const hx = h.multiply(x)
+    const s = randomScalar()
+    const gs = g.multiply(s)
+    const hs = h.multiply(s)
+    const toHash = new Uint8Array(6 * 64)
+    ;[g, h, gx, hx, gs, hs].forEach((p, i) => {
+      toHash.set(pointToBytes(p), i * 64)
+    })
+    const c = bytesToUint256(bn254.CURVE.hash(toHash))
+    secrets.push(s)
+    cards.push({
+      g: pointToUints(g),
+      h: pointToUints(h),
+      gx: pointToUints(gx),
+      hx: pointToUints(hx),
+      p: {
+        gs: pointToUints(gs),
+        hs: pointToUints(hs),
+        scx: bn254.CURVE.Fp.create(s + c * x)
+      }
+    })
+  }
+  return {cards: cards, secrets: secrets}
+}
+
+const Phase_PREP = 2
 
 async function findAutomaticAction(socket) {
   if ('activeGames' in socket) {
-    for (const [id, data] in socket.activeGames.entries()) {
+    console.log(`looking for auto actions for ${socket.account.address}`)
+    for (const [id, data] of Object.entries(socket.activeGames)) {
+      console.log(`looking for auto actions for ${id} ${JSON.stringify(data)}...`)
       if (data.phase === Phase_PREP &&
-          !(db.exists(`/${socket.account.address}/${id}/deckPrep`))) {
-        // TODO
+          !(await db.exists(`/${socket.account.address}/${id}/deckPrep`))) {
+        console.log('doing deckPrep...')
+        const deckPrep = prepareDeck()
+        await db.push(`/${socket.account.address}/${id}/deckPrep`,
+                      deckPrep.secrets.map(s => s.toString()))
+        socket.emit('requestTransaction',
+          await room.connect(socket.account).populateTransaction
+          .prepareDeck(
+            id, data.seatIndex, {cards: deckPrep.cards}, {
+              maxFeePerGas: socket.feeData.maxFeePerGas,
+              maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+            }))
       }
     }
   }
@@ -195,6 +276,7 @@ async function changeAccount(socket) {
   await refreshBalance(socket)
   await refreshPendingGames(socket)
   await refreshActiveGames(socket)
+  await findAutomaticAction(socket)
 }
 
 io.on('connection', async socket => {
