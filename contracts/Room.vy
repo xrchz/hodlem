@@ -594,3 +594,9 @@ def configStructure(_tableId: uint256) -> DynArray[uint256, 100]:
 @view
 def phase(_tableId: uint256) -> uint256:
   return self.tables[_tableId].phase
+
+@external
+@view
+def hasSubmittedPrep(_tableId: uint256, _seatIndex: uint256) -> bool:
+  return self.tables[_tableId].deck.hasSubmittedPrep(
+    self.tables[_tableId].deckId, _seatIndex)

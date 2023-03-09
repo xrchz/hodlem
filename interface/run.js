@@ -91,6 +91,8 @@ async function getActiveGames(socket) {
   return tableIds
 }
 
+const Phase_PREP = 2
+
 const configKeys = [
   'buyIn', 'bond', 'startsWith', 'untilLeft', 'levelBlocks', 'verifRounds',
   'prepBlocks', 'shuffBlocks', 'verifBlocks', 'dealBlocks', 'actBlocks']
@@ -156,6 +158,16 @@ async function refreshActiveGames(socket) {
       }
     }
   }))
+  for (const [id, data] of Object.entries(socket.activeGames)) {
+    if (data.phase === Phase_PREP) {
+      data.waitingOn = []
+      for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
+        if (!(await room.hasSubmittedPrep(id, seatIndex))) {
+          data.waitingOn.push(seatIndex)
+        }
+      }
+    }
+  }
   socket.emit('activeGames',
     tableIds.map(idNum => socket.gameConfigs[idNum.toString()].formatted),
     socket.activeGames)
@@ -174,7 +186,6 @@ function uint256ToBytes(n) {
   const h = s.padStart(64, '0')
   const b = new Uint8Array(32)
   let i = 0
-  // TODO: check endianness in vyper
   while (i < 64) {
     b[i/2] = parseInt(h.slice(i, i+2), 16)
     i += 2
@@ -183,7 +194,6 @@ function uint256ToBytes(n) {
 }
 
 function bytesToUint256(a) {
-  // TODO: check endianness
   return BigInt(`0x${Array.from(a).map(i => i.toString(16).padStart(2, '0')).join('')}`)
 }
 
@@ -233,15 +243,13 @@ function prepareDeck() {
   return {cards: cards, secrets: secrets}
 }
 
-const Phase_PREP = 2
-
 async function findAutomaticAction(socket) {
   if ('activeGames' in socket) {
     console.log(`looking for auto actions for ${socket.account.address}`)
     for (const [id, data] of Object.entries(socket.activeGames)) {
       console.log(`looking for auto actions for ${id} ${JSON.stringify(data)}...`)
       if (data.phase === Phase_PREP &&
-          !(await db.exists(`/${socket.account.address}/${id}/deckPrep`))) {
+          !(await room.hasSubmittedPrep(id, data.seatIndex))) {
         console.log('doing deckPrep...')
         const deckPrep = prepareDeck()
         await db.push(`/${socket.account.address}/${id}/deckPrep`,
@@ -415,5 +423,9 @@ io.on('connection', async socket => {
     catch (e) {
       socket.emit('errorMsg', e.toString())
     }
+  })
+
+  socket.on('finishPrep', tableId => {
+    socket.emit('errorMsg', 'finish prep not implemented yet')
   })
 })

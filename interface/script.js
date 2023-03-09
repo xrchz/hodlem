@@ -1,6 +1,17 @@
 const socket = io()
 
 const errorMsg = document.getElementById('errorMsg')
+const errorMsgText = errorMsg.getElementsByTagName('span')[0]
+const clearErrorMsgButton = errorMsg.getElementsByTagName('input')[0]
+
+socket.on('errorMsg', msg => {
+  errorMsg.classList.remove('hidden')
+  errorMsgText.innerText = msg
+})
+
+clearErrorMsgButton.addEventListener('click', _ => {
+  errorMsg.classList.add('hidden')
+})
 
 const maxFeeElement = document.getElementById('maxFeePerGas')
 const prioFeeElement = document.getElementById('maxPriorityFeePerGas')
@@ -91,10 +102,6 @@ socket.on('balance', balance => {
   balanceElement.value = balance
 })
 
-socket.on('errorMsg', msg => {
-  errorMsg.innerText = msg
-})
-
 const transactionDiv = document.getElementById('transaction')
 const txnInfoElement = document.getElementById('txnInfo')
 const acceptTxnButton = document.getElementById('acceptTxn')
@@ -165,6 +172,19 @@ socket.on('activeGames', (configs, data) => {
     const ul = li.appendChild(document.createElement('ul'))
     ul.appendChild(document.createElement('li')).innerText = `Your seat: ${data[config.id].seatIndex}`
     ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[data[config.id].phase]}`
+    if (phases[data[config.id].phase] === 'PREP') {
+      if (data[config.id].waitingOn.length) {
+        ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(data[config.id].waitingOn)}`
+      }
+      else {
+        const button = li.appendChild(document.createElement('input'))
+        button.type = 'button'
+        button.value = 'Finish Preparation'
+        button.addEventListener('click', _ => {
+          socket.emit('finishPrep', config.id)
+        })
+      }
+    }
   })
 })
 

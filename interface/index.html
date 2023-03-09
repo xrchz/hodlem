@@ -8,7 +8,9 @@
     <script src="socket.io/socket.io.js"></script>
   </head>
   <body>
-    <p id=errorMsg></p>
+    <div id=errorMsg class=hidden>
+      <span></span><input type=button value=Clear></input>
+    </div>
     <section id=networkDiv>
       <div id=transaction class=hidden>
         <p id=txnInfo></p>
