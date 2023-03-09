@@ -236,7 +236,7 @@ function prepareDeck() {
       p: {
         gs: pointToUints(gs),
         hs: pointToUints(hs),
-        scx: bn254.CURVE.Fp.create(s + c * x)
+        scx: (s + c * x) % bn254.CURVE.n
       }
     })
   }
