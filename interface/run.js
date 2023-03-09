@@ -254,7 +254,7 @@ io.on('connection', async socket => {
 
   socket.on('send', async (to, amount) => {
     try {
-      socket.emit('transaction',
+      socket.emit('requestTransaction',
         await socket.account.populateTransaction({
           to: to,
           type: 2,
@@ -275,7 +275,7 @@ io.on('connection', async socket => {
       config.bond = ethers.utils.parseEther(config.bond)
       config.gameAddress = game.address
       config.structure = config.structure.split(/\s/).map(x => ethers.utils.parseEther(x))
-      socket.emit('transaction',
+      socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
         .createTable(
           seatIndex, config, deck.address, {
@@ -291,7 +291,7 @@ io.on('connection', async socket => {
 
   socket.on('leaveGame', async (tableId, seatIndex) => {
     try {
-      socket.emit('transaction',
+      socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
         .leaveTable(
           tableId, seatIndex, {
@@ -306,7 +306,7 @@ io.on('connection', async socket => {
 
   socket.on('joinGame', async (tableId, seatIndex) => {
     try {
-      socket.emit('transaction',
+      socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
         .joinTable(
           tableId, seatIndex, {
@@ -322,7 +322,7 @@ io.on('connection', async socket => {
 
   socket.on('startGame', async tableId => {
     try {
-      socket.emit('transaction',
+      socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
         .startGame(
           tableId, {

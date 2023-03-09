@@ -101,7 +101,7 @@ const acceptTxnButton = document.getElementById('acceptTxn')
 const rejectTxnButton = document.getElementById('rejectTxn')
 const sendTxnsCheckbox = document.getElementById('sendTxns')
 
-socket.on('transaction', data => {
+socket.on('requestTransaction', data => {
   txnInfoElement.data = data
   if (sendTxnsCheckbox.checked) {
     acceptTxnButton.dispatchEvent(new Event('click'))
