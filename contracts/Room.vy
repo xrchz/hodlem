@@ -36,8 +36,9 @@ interface DeckManager:
     def resetShuffle(_id: uint256): nonpayable
     def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 2000]): nonpayable
     def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256): nonpayable
-    def respondChallenge(_id: uint256, _playerIdx: uint256, _data: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256: nonpayable
-    def defuseChallenge(_id: uint256, _playerIdx: uint256, _scalars: DynArray[uint256, 256], _permutations: DynArray[DynArray[uint256, 2000], 256]): nonpayable
+    def respondChallenge(_id: uint256, _playerIdx: uint256, _hash: bytes32) -> uint256: nonpayable
+    def defuseChallenge(_id: uint256, _playerIdx: uint256, _commitments: DynArray[DynArray[uint256[2], 2000], 256],
+                        _scalars: DynArray[uint256, 256], _permutations: DynArray[DynArray[uint256, 2000], 256]): nonpayable
     def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256): nonpayable
     def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2], _proof: Proof): nonpayable
     def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _openIdx: uint256, _proof: Proof): nonpayable
@@ -45,6 +46,7 @@ interface DeckManager:
     def shuffleCount(_id: uint256) -> uint256: view
     def lastShuffle(_id: uint256) -> DynArray[uint256[2], 2000]: view
     def challengeActive(_id: uint256, _playerIdx: uint256) -> bool: view
+    def challengeRnd(_id: uint256) -> uint256: view
     def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256: view
     def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]: view
     def openedCard(_id: uint256, _cardIdx: uint256) -> uint256: view
@@ -338,24 +340,24 @@ def shuffleCount(_tableId: uint256) -> uint256:
 
 @external
 def submitShuffle(_tableId: uint256, _seatIndex: uint256,
-                  _shuffle: DynArray[uint256[2], 2000],
-                  _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256:
+                  _shuffle: DynArray[uint256[2], 2000], _hash: bytes32) -> uint256:
   self.validatePhase(_tableId, Phase_SHUF)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   deckId: uint256 = self.tables[_tableId].deckId
   self.tables[_tableId].commitBlock = block.number
   self.tables[_tableId].deck.submitShuffle(deckId, _seatIndex, _shuffle)
   self.tables[_tableId].deck.challenge(deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
-  return self.tables[_tableId].deck.respondChallenge(deckId, _seatIndex, _commitment)
+  return self.tables[_tableId].deck.respondChallenge(deckId, _seatIndex, _hash)
 
 @external
 def submitVerif(_tableId: uint256, _seatIndex: uint256,
+                _commitments: DynArray[DynArray[uint256[2], 2000], 256],
                 _scalars: DynArray[uint256, 256],
                 _permutations: DynArray[DynArray[uint256, 2000], 256]):
   self.validatePhase(_tableId, Phase_SHUF)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   self.tables[_tableId].deck.defuseChallenge(
-    self.tables[_tableId].deckId, _seatIndex, _scalars, _permutations)
+    self.tables[_tableId].deckId, _seatIndex, _commitments, _scalars, _permutations)
   self.autoShuffle(_tableId)
 
 @internal

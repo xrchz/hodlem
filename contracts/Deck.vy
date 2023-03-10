@@ -56,7 +56,7 @@ struct Deck:
   # shuffle[j+1] is the shuffled encrypted cards from player index j
   shuffle: DynArray[DynArray[uint256[2], 2000], 1001] # 1000 + 1] <- another Vyper bug with importing
   challengeReq: DynArray[uint256, 1000]
-  challengeRes: DynArray[DynArray[DynArray[uint256[2], 2000], 256], 1000]
+  challengeRes: DynArray[bytes32, 1000]
   challengeRnd: uint256
   # for decrypting shuffled cards
   # note: cards[i] corresponds to shuffle[_][i+1]
@@ -176,8 +176,7 @@ def resetShuffle(_id: uint256):
   assert self.decks[_id].dealer == msg.sender, "unauthorised"
   self.decks[_id].shuffle = [self.decks[_id].shuffle[0]]
   self.decks[_id].challengeReq = empty(DynArray[uint256, MAX_PLAYERS])
-  self.decks[_id].challengeRes = empty(
-    DynArray[DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY], MAX_PLAYERS])
+  self.decks[_id].challengeRes = empty(DynArray[bytes32, MAX_PLAYERS])
   for cardIdx in range(MAX_SIZE):
     if cardIdx == len(self.decks[_id].shuffle[0]):
       break
@@ -190,7 +189,7 @@ def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[
   assert len(self.decks[_id].shuffle[0]) == len(_shuffle), "wrong length"
   self.decks[_id].shuffle.append(_shuffle)
   self.decks[_id].challengeReq.append(0)
-  self.decks[_id].challengeRes.append([])
+  self.decks[_id].challengeRes.append(empty(bytes32))
 
 @external
 def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256):
@@ -200,24 +199,33 @@ def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256):
   self.decks[_id].challengeReq[_playerIdx] = _rounds
 
 @external
-def respondChallenge(_id: uint256, _playerIdx: uint256,
-                     _data: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256:
+def respondChallenge(_id: uint256, _playerIdx: uint256, _hash: bytes32) -> uint256:
   assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
-  assert self.decks[_id].challengeReq[_playerIdx] == len(_data), "wrong length"
-  assert len(self.decks[_id].challengeRes[_playerIdx]) == 0, "already responded"
-  self.decks[_id].challengeRes[_playerIdx] = _data
+  assert self.decks[_id].challengeRes[_playerIdx] == empty(bytes32), "already responded"
+  self.decks[_id].challengeRes[_playerIdx] = _hash
   self.decks[_id].challengeRnd = block.prevrandao
   return block.prevrandao
 
+@internal
+@pure
+def hashCommitments(_commitments: DynArray[DynArray[uint256[2], 2000], 256]) -> bytes32:
+  hash: bytes32 = empty(bytes32)
+  for a in _commitments:
+    for b in a:
+      hash = sha256(concat(hash, convert(b[0], bytes32), convert(b[1], bytes32)))
+  return hash
+
 @external
 def defuseChallenge(_id: uint256, _playerIdx: uint256,
+                    _commitments: DynArray[DynArray[uint256[2], 2000], 256],
                     _scalars: DynArray[uint256, 256],
                     _permutations: DynArray[DynArray[uint256, 2000], 256]):
   assert self.decks[_id].challengeReq[_playerIdx] != 0, "no challenge"
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
-  assert len(self.decks[_id].challengeRes[_playerIdx]) == len(_scalars), "no response"
+  assert len(_commitments) == len(_scalars), "length mismatch"
   assert len(_scalars) == len(_permutations), "length mismatch"
+  assert self.decks[_id].challengeRes[_playerIdx] == self.hashCommitments(_commitments), "invalid commitment"
   bits: uint256 = self.decks[_id].challengeRnd
   for k in range(MAX_SECURITY):
     if k == len(_scalars):
@@ -230,13 +238,12 @@ def defuseChallenge(_id: uint256, _playerIdx: uint256,
       if i == len(self.decks[_id].shuffle[0]):
         break
       assert self.pointEq(
-        self.decks[_id].challengeRes[_playerIdx][k][i],
+        _commitments[k][i],
         ecmul(self.decks[_id].shuffle[j][_permutations[k][i]], _scalars[k])
       ), "verification failed"
     bits = shift(bits, -1)
   self.decks[_id].challengeReq[_playerIdx] = 0
-  self.decks[_id].challengeRes[_playerIdx] = empty(
-    DynArray[DynArray[uint256[2], MAX_SIZE], MAX_SECURITY])
+  self.decks[_id].challengeRes[_playerIdx] = empty(bytes32)
 
 @external
 def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256):

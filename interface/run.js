@@ -176,10 +176,12 @@ async function refreshActiveGames(socket) {
     }
     if (data.phase === Phase_SHUF) {
       data.shuffleCount = (await deck.shuffleCount(data.deckId)).toNumber()
-      data.waitingOn = []
-      for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
-        if (await deck.challengeActive(data.deckId, seatIndex)) {
-          data.waitingOn.push(seatIndex)
+      if (data.shuffleCount === socket.gameConfigs[id].startsWith.toNumber()) {
+        data.waitingOn = []
+        for (const seatIndex of Array(data.shuffleCount).keys()) {
+          if (await deck.challengeActive(data.deckId, seatIndex)) {
+            data.waitingOn.push(seatIndex)
+          }
         }
       }
     }
@@ -228,7 +230,6 @@ function pointToBytes(p) {
 
 function prepareDeck() {
   const cards = []
-  const secrets = []
   for (const i of Array(53).keys()) {
     const g = randomPoint()
     const h = randomPoint()
@@ -243,7 +244,6 @@ function prepareDeck() {
       toHash.set(pointToBytes(p), i * 64)
     })
     const c = bytesToUint256(bn254.CURVE.hash(toHash))
-    secrets.push(s)
     cards.push({
       g: pointToUints(g),
       h: pointToUints(h),
@@ -256,15 +256,93 @@ function prepareDeck() {
       }
     })
   }
-  return {cards: cards, secrets: secrets}
+  return {cards: cards}
+}
+
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * i)
+    ;[array[i], array[j]] = [array[j], array[i]]
+  }
+}
+
+function hashCommitment(c) {
+  const hash = new Uint8Array(32 * 3)
+  c.forEach(d => {
+    d.forEach(p => {
+      hash.set(uint256ToBytes(p[0]), 32)
+      hash.set(uint256ToBytes(p[1]), 64)
+      hash.set(bn254.CURVE.hash(hash))
+    })
+  })
+  return hash.slice(0, 32)
 }
 
 async function shuffle(socket, tableId) {
-  // TODO
+  const data = socket.activeGames[tableId]
+  const config = socket.gameConfigs[tableId]
+  const x = randomScalar()
+  await db.push(`/${socket.account.address}/${tableId}/shuffle/secret`, x.toString())
+  const indices = Array.from({length: 52}, (_, i) => i + 1)
+  shuffleArray(indices)
+  await db.push(`/${socket.account.address}/${tableId}/shuffle/permutation`, indices)
+  const lastCards = await deck.lastShuffle(data.deckId)
+  indices.unshift(0)
+  console.log(`created permutation: ${JSON.stringify(indices)}`)
+  const cards = indices.map(i =>
+    pointToUints(
+      bn254.ProjectivePoint.fromAffine(
+        {x: BigInt(lastCards[i][0].toString()),
+         y: BigInt(lastCards[i][1].toString())})
+      .multiply(x)
+    )
+  )
+  const secrets = Array.from({length: config.formatted.verifRounds}, _ => randomScalar())
+  const permutations = Array.from({length: config.formatted.verifRounds}, _ => {
+    const a = Array.from({length: 53}, (_, i) => i)
+    shuffleArray(a)
+    return a
+  })
+  await db.push(`/${socket.account.address}/${tableId}/shuffle/secrets`, secrets.map(x => x.toString()))
+  await db.push(`/${socket.account.address}/${tableId}/shuffle/permutations`, permutations)
+  const commitment = permutations.map((p, k) =>
+    p.map(i => {
+      bn254.ProjectivePoint.fromAffine({x: cards[i][0], y: cards[i][1]})
+      return pointToUints(
+        bn254.ProjectivePoint.fromAffine(
+          {x: cards[i][0],
+           y: cards[i][1]})
+        .multiply(secrets[k])
+      )
+    }
+    )
+  )
+  await db.push(`/${socket.account.address}/${tableId}/shuffle/commitment`,
+                commitment.map(deck => deck.map(card => card.map(i => i.toString()))))
+  return [cards, hashCommitment(commitment)]
 }
 
 async function verifyShuffle(socket, tableId) {
-  // TODO
+  let challenge = await deck.challengeRnd(tableId)
+  const secret = ethers.BigNumber.from(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
+  const permutation = await db.getData(`/${socket.account.address}/${tableId}/shuffle/permutation`)
+  const secrets = await db.getData(`/${socket.account.address}/${tableId}/shuffle/secrets`)
+  const permutations = await db.getData(`/${socket.account.address}/${tableId}/shuffle/permutations`)
+  const commitment = await db.getData(`/${socket.account.address}/${tableId}/shuffle/commitment`)
+  const scalars = []
+  const responsePermutations = []
+  permutations.forEach((p, i) => {
+    if (challenge.mod(2).isZero()) {
+      scalars.push(secrets[i])
+      responsePermutations.push(p)
+    }
+    else {
+      scalars.push(secret.mul(secrets[i]).mod(bn254.CURVE.n))
+      responsePermutations.push(permutation.map(j => p[j]))
+    }
+    challenge = challenge.div(2)
+  })
+  return [commitment, scalars, responsePermutations]
 }
 
 async function findAutomaticAction(socket) {
@@ -276,12 +354,10 @@ async function findAutomaticAction(socket) {
           !(await deck.hasSubmittedPrep(data.deckId, data.seatIndex))) {
         console.log('doing deckPrep...')
         const deckPrep = prepareDeck()
-        await db.push(`/${socket.account.address}/${id}/deckPrep`,
-                      deckPrep.secrets.map(s => s.toString()))
         socket.emit('requestTransaction',
           await room.connect(socket.account).populateTransaction
           .prepareDeck(
-            id, data.seatIndex, {cards: deckPrep.cards}, {
+            id, data.seatIndex, deckPrep, {
               maxFeePerGas: socket.feeData.maxFeePerGas,
               maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
             }))
@@ -467,14 +543,13 @@ io.on('connection', async socket => {
 
   socket.on('submitShuffle', async tableId => {
     try {
-      await shuffle(socket, tableId)
+      const [shuffledCards, commitmentHash] = await shuffle(socket, tableId)
       socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
         .submitShuffle(
           tableId, socket.activeGames[tableId].seatIndex,
-          socket.activeGames[tableId].shuffle,
-          socket.activeGames[tableId].commitment,
-          {
+          shuffledCards, commitmentHash, {
+            gasLimit: 10000000,
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
           }))
@@ -486,14 +561,13 @@ io.on('connection', async socket => {
 
   socket.on('submitVerif', async tableId => {
     try {
-      await verifyShuffle(socket, tableId)
+      const [commitment, scalars, permutations] = await verifyShuffle(socket, tableId)
       socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
         .submitVerif(
           tableId, socket.activeGames[tableId].seatIndex,
-          socket.activeGames[tableId].scalars,
-          socket.activeGames[tableId].permutations,
-          {
+          commitment, scalars, permutations, {
+            gasLimit: 20000000,
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
           }))
