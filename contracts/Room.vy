@@ -86,7 +86,8 @@ struct Table:
   deckId:      uint256              # id of deck in deck contract
   phase:       uint256
   nextPhase:   uint256              # phase to enter after deal
-  present:     bool[9]              # whether each player contributes to the current shuffle
+  present:     uint256              # whether each player contributes to the current shuffle
+  shuffled:    uint256              # whether each player has verified their current shuffle
   gameId:      uint256              # id of game in game contract
   commitBlock: uint256              # block from which new commitments were required
   deckIndex:   uint256              # index of next card in deck
@@ -211,7 +212,7 @@ def startGame(_tableId: uint256):
       break
     player: address = self.tables[_tableId].seats[seatIndex]
     assert player != empty(address), "not enough players"
-    self.tables[_tableId].present[seatIndex] = True
+    self.tables[_tableId].present |= shift(1, seatIndex)
     self.nextLiveTable[player][_tableId] = self.nextLiveTable[player][0]
     self.nextLiveTable[player][0] = _tableId
     self.prevLiveTable[player][_tableId] = 0
@@ -341,6 +342,7 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
   self.tables[_tableId].commitBlock = block.number
   self.tables[_tableId].deck.submitShuffle(deckId, _seatIndex, _shuffle)
   self.tables[_tableId].deck.challenge(deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
+  self.autoShuffle(_tableId)
   return self.tables[_tableId].deck.respondChallenge(deckId, _seatIndex, _hash)
 
 @external
@@ -350,12 +352,13 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
                 _permutations: uint256[53][64]):
   self.validatePhase(_tableId, Phase_SHUF)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+  self.tables[_tableId].shuffled |= shift(1, _seatIndex)
   for i in range(MAX_SECURITY):
     if i == self.tables[_tableId].config.verifRounds: break
     self.tables[_tableId].deck.defuseNextChallenge(
       self.tables[_tableId].deckId, _seatIndex,
       _commitments[i], _scalars[i], _permutations[i])
-  self.autoShuffle(_tableId)
+  self.autoVerif(_tableId)
 
 @internal
 def autoShuffle(_tableId: uint256):
@@ -363,9 +366,9 @@ def autoShuffle(_tableId: uint256):
   seatIndex: uint256 = self.shuffleCount(_tableId)
   for _ in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:
-      self.finishShuffle(_tableId)
+      self.autoVerif(_tableId)
       break
-    if not self.tables[_tableId].present[seatIndex]:
+    if self.tables[_tableId].present & shift(1, seatIndex) == 0:
       # just copy the shuffle: use identity permutation and secret key = 1
       # do not challenge it; external challenges can just be ignored
       self.tables[_tableId].deck.submitShuffle(
@@ -374,6 +377,18 @@ def autoShuffle(_tableId: uint256):
     else:
       self.tables[_tableId].commitBlock = block.number
       break
+
+@internal
+def autoVerif(_tableId: uint256):
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == self.tables[_tableId].config.startsWith:
+      self.finishShuffle(_tableId)
+    if self.tables[_tableId].shuffled & shift(1, seatIndex) == 0:
+      if self.tables[_tableId].present & shift(1, seatIndex) == 0:
+        self.tables[_tableId].shuffled |= shift(1, seatIndex)
+      else:
+        self.tables[_tableId].commitBlock = block.number
+        break
 
 @internal
 def finishShuffle(_tableId: uint256):
@@ -392,13 +407,17 @@ def finishShuffle(_tableId: uint256):
 def reshuffle(_tableId: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   self.tables[_tableId].deck.resetShuffle(self.tables[_tableId].deckId)
+  self.tables[_tableId].shuffled = 0
   self.tables[_tableId].phase = Phase_SHUF
   self.tables[_tableId].commitBlock = block.number
 
 @external
 def setPresence(_tableId: uint256, _seatIndex: uint256, _present: bool):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
-  self.tables[_tableId].present[_seatIndex] = _present
+  if _present:
+    self.tables[_tableId].present |= shift(1, _seatIndex)
+  else:
+    self.tables[_tableId].present &= ~shift(1, _seatIndex)
 
 # deal
 
@@ -414,7 +433,7 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
   for _ in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
-    if not self.tables[_tableId].present[seatIndex]:
+    if self.tables[_tableId].present & shift(1, seatIndex) == 0:
       card: uint256[2] = self.tables[_tableId].deck.lastDecrypt(deckId, _cardIndex)
       self.tables[_tableId].deck.decryptCard(deckId, seatIndex, _cardIndex, card,
         self.tables[_tableId].deck.emptyProof(card))
