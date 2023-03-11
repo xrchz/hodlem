@@ -185,9 +185,9 @@ def respondChallenge(_id: uint256, _playerIdx: uint256, _hash: bytes32) -> uint2
 @external
 def defuseNextChallenge(_id: uint256, _playerIdx: uint256,
                         _commitment: uint256[2][53], _scalar: uint256, _permutation: uint256[53]):
+  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   k: uint256 = self.decks[_id].challengeReq[_playerIdx]
   assert k != 0, "no challenge"
-  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   hash: bytes32 = self.decks[_id].challengeRes[_playerIdx][1]
   for p in _commitment:
     hash = sha256(concat(hash, convert(p[0], bytes32), convert(p[1], bytes32)))
@@ -197,9 +197,7 @@ def defuseNextChallenge(_id: uint256, _playerIdx: uint256,
     assert self.decks[_id].challengeRes[_playerIdx][0] == hash, "invalid commitments"
   bits: uint256 = self.decks[_id].challengeRnd[_playerIdx]
   self.decks[_id].challengeRnd[_playerIdx] = shift(bits, -1)
-  j: uint256 = _playerIdx
-  if not convert(bits & 1, bool):
-    j = unsafe_add(j, 1)
+  j: uint256 = unsafe_add(_playerIdx, bits & 1)
   for i in range(SIZE+1):
     assert self.pointEq(
       _commitment[i],
