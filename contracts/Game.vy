@@ -37,7 +37,7 @@ interface DeckManager:
     def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
     def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DynArray[CP, 2000]): nonpayable
     def emptyProof(card: uint256[2]) -> Proof: pure
-    def finishPrep(_id: uint256) -> uint256: nonpayable
+    def finishPrep(_id: uint256): nonpayable
     def resetShuffle(_id: uint256): nonpayable
     def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 2000]): nonpayable
     def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256): nonpayable

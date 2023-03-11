@@ -58,8 +58,8 @@ struct Deck:
   # for decrypting shuffled cards
   # note: cards[i] corresponds to shuffle[_][i+1]
   cards: DynArray[DrawCard, 2000]
-  # data for deck preparation
-  prep: DynArray[DynArray[CP, 2000], 1000]
+  # bit array on whether each player has submitted their deck prep
+  prepped: uint256
 
 decks: HashMap[uint256, Deck]
 nextId: uint256
@@ -74,7 +74,6 @@ def newDeck(_size: uint256, _players: uint256) -> uint256:
     if i == _players:
       break
     self.decks[id].addrs.append(msg.sender)
-    self.decks[id].prep.append([])
   self.decks[id].shuffle.append([])
   for i in range(MAX_SIZE):
     self.decks[id].shuffle[0].append(empty(uint256[2]))
@@ -96,11 +95,15 @@ def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address):
 @external
 def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DynArray[CP, 2000]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
-  assert len(self.decks[_id].prep[_playerIdx]) == 0, "already prepared"
+  assert not self._hasSubmittedPrep(_id, _playerIdx), "already prepared"
   assert len(_prep) == len(self.decks[_id].shuffle[0]), "wrong length"
-  for c in _prep:
-    assert c.hx[0] != 0 or c.hx[1] != 0, "invalid point"
-  self.decks[_id].prep[_playerIdx] = _prep
+  for cardIdx in range(MAX_SIZE):
+    if cardIdx == len(self.decks[_id].shuffle[0]):
+      break
+    assert self.chaumPederson(_prep[cardIdx]), "invalid prep"
+    self.decks[_id].shuffle[0][cardIdx] = ecadd(
+      self.decks[_id].shuffle[0][cardIdx], _prep[cardIdx].hx)
+  self.decks[_id].prepped ^= shift(1, _playerIdx)
 
 @internal
 @pure
@@ -146,27 +149,17 @@ def chaumPederson(cp: CP) -> bool:
           self.cp1(cp.h, cp.hx, cp.p.hs, c, cp.p.scx))
 
 @external
-# returns index of first player that fails verification
-# or number of players on success
-# (deck state is undefined after failure)
-def finishPrep(_id: uint256) -> uint256:
-  numPlayers: uint256 = len(self.decks[_id].prep)
+def finishPrep(_id: uint256):
+  n: uint256 = len(self.decks[_id].addrs)
+  assert not self._hasSubmittedPrep(_id, n), "already finished"
+  for playerIdx in range(MAX_PLAYERS):
+    if playerIdx == n: break
+    assert self._hasSubmittedPrep(_id, playerIdx), "not finished"
+  self.decks[_id].prepped = shift(1, n)
+  n = len(self.decks[_id].shuffle[0])
   for cardIdx in range(MAX_SIZE):
-    if cardIdx == len(self.decks[_id].shuffle[0]):
-      break
-    assert self.pointEq(self.decks[_id].shuffle[0][cardIdx], [0, 0]), "already finished"
-    for playerIdx in range(MAX_PLAYERS):
-      if playerIdx == numPlayers:
-        break
-      if self.chaumPederson(self.decks[_id].prep[playerIdx][cardIdx]):
-        self.decks[_id].shuffle[0][cardIdx] = ecadd(
-          self.decks[_id].shuffle[0][cardIdx],
-          self.decks[_id].prep[playerIdx][cardIdx].hx)
-      else:
-        return playerIdx
+    if cardIdx == n: break
     self.decks[_id].cards.append(empty(DrawCard))
-  self.decks[_id].prep = []
-  return numPlayers
 
 @external
 def resetShuffle(_id: uint256):
@@ -283,10 +276,15 @@ def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
     p: _proof})), "verification failed"
   self.decks[_id].cards[_cardIdx].opensAs = unsafe_add(_openIdx, 1)
 
+@internal
+@view
+def _hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool:
+  return convert(self.decks[_id].prepped & shift(1, _playerIdx), bool)
+
 @external
 @view
 def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool:
-  return len(self.decks[_id].prep[_playerIdx]) != 0
+  return self._hasSubmittedPrep(_id, _playerIdx)
 
 @external
 @view

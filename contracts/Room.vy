@@ -29,7 +29,7 @@ interface DeckManager:
     def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
     def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DynArray[CP, 2000]): nonpayable
     def emptyProof(card: uint256[2]) -> Proof: pure
-    def finishPrep(_id: uint256) -> uint256: nonpayable
+    def finishPrep(_id: uint256): nonpayable
     def resetShuffle(_id: uint256): nonpayable
     def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 2000]): nonpayable
     def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256): nonpayable
@@ -317,16 +317,13 @@ def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DynArray[CP, 
 @external
 def finishDeckPrep(_tableId: uint256):
   self.validatePhase(_tableId, Phase_PREP)
-  failIndex: uint256 = self.tables[_tableId].deck.finishPrep(self.tables[_tableId].deckId)
-  if failIndex == self.tables[_tableId].config.startsWith:
-    for cardIndex in range(MAX_SEATS):
-      if cardIndex == failIndex: break
-      self.tables[_tableId].drawIndex[cardIndex] = cardIndex
-      self.tables[_tableId].requirement[cardIndex] = Req_SHOW
-    self.tables[_tableId].phase = Phase_SHUF
-    self.tables[_tableId].commitBlock = block.number
-  else:
-    self.failChallenge(_tableId, failIndex)
+  self.tables[_tableId].deck.finishPrep(self.tables[_tableId].deckId)
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == self.tables[_tableId].config.startsWith: break
+    self.tables[_tableId].drawIndex[seatIndex] = seatIndex
+    self.tables[_tableId].requirement[seatIndex] = Req_SHOW
+  self.tables[_tableId].phase = Phase_SHUF
+  self.tables[_tableId].commitBlock = block.number
 
 # shuffle
 
