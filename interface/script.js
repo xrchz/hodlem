@@ -176,6 +176,14 @@ socket.on('activeGames', (configs, data) => {
     if (phases[di.phase] === 'PREP') {
       if (di.waitingOn.length) {
         ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+        if (di.waitingOn.includes(di.seatIndex)) {
+          const button = li.appendChild(document.createElement('input'))
+          button.type = 'button'
+          button.value = 'Submit Deck Preparation'
+          button.addEventListener('click', _ => {
+            socket.emit('submitPrep', config.id)
+          })
+        }
       }
       else {
         const button = li.appendChild(document.createElement('input'))

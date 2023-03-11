@@ -349,27 +349,6 @@ async function verifyShuffle(socket, tableId) {
   return [commitment, scalars, responsePermutations]
 }
 
-async function findAutomaticAction(socket) {
-  if ('activeGames' in socket) {
-    console.log(`looking for auto actions for ${socket.account.address}`)
-    for (const [id, data] of Object.entries(socket.activeGames)) {
-      console.log(`...auto actions for ${id} ${JSON.stringify(data)}...`)
-      if (data.phase === Phase_PREP &&
-          !(await deck.hasSubmittedPrep(data.deckId, data.seatIndex))) {
-        console.log('doing deckPrep...')
-        const deckPrep = prepareDeck()
-        socket.emit('requestTransaction',
-          await room.connect(socket.account).populateTransaction
-          .prepareDeck(
-            id, data.seatIndex, deckPrep, {
-              maxFeePerGas: socket.feeData.maxFeePerGas,
-              maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-            }))
-      }
-    }
-  }
-}
-
 async function refreshNetworkInfo(socket) {
   await refreshBalance(socket)
   await refreshFeeData(socket)
@@ -378,7 +357,6 @@ async function refreshNetworkInfo(socket) {
   }
   if ('account' in socket) {
     await refreshActiveGames(socket)
-    await findAutomaticAction(socket)
   }
 }
 
@@ -388,7 +366,6 @@ async function changeAccount(socket) {
   await refreshBalance(socket)
   await refreshPendingGames(socket)
   await refreshActiveGames(socket)
-  await findAutomaticAction(socket)
 }
 
 io.on('connection', async socket => {
@@ -529,6 +506,22 @@ io.on('connection', async socket => {
     }
   })
 
+  socket.on('submitPrep', async tableId => {
+    try {
+      const deckPrep = prepareDeck()
+      socket.emit('requestTransaction',
+        await room.connect(socket.account).populateTransaction
+        .prepareDeck(
+          tableId, socket.activeGames[tableId].seatIndex, deckPrep, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
   socket.on('finishPrep', async tableId => {
     try {
       socket.emit('requestTransaction',
@@ -552,7 +545,6 @@ io.on('connection', async socket => {
         .submitShuffle(
           tableId, socket.activeGames[tableId].seatIndex,
           shuffledCards, commitmentHash, {
-            gasLimit: 10000000,
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
           }))
