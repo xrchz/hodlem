@@ -256,7 +256,7 @@ function prepareDeck() {
       }
     })
   }
-  return {cards: cards}
+  return cards
 }
 
 function shuffleArray(array) {

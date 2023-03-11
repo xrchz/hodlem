@@ -18,9 +18,6 @@ struct CP:
   gx:  uint256[2] # g ** x
   hx:  uint256[2] # h ** x
   p: Proof
-
-struct DeckPrep:
-  cards: DynArray[CP, 2000]
 # end of copy
 
 # import Deck as DeckManager
@@ -30,7 +27,7 @@ interface DeckManager:
     def newDeck(_size: uint256, _players: uint256) -> uint256: nonpayable
     def changeDealer(_id: uint256, _newAddress: address): nonpayable
     def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
-    def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep): nonpayable
+    def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DynArray[CP, 2000]): nonpayable
     def emptyProof(card: uint256[2]) -> Proof: pure
     def finishPrep(_id: uint256) -> uint256: nonpayable
     def resetShuffle(_id: uint256): nonpayable
@@ -312,7 +309,7 @@ def failChallenge(_tableId: uint256, _challIndex: uint256):
 # deck setup
 
 @external
-def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DeckPrep):
+def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DynArray[CP, 2000]):
   self.validatePhase(_tableId, Phase_PREP)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _deckPrep)

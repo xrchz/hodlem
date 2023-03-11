@@ -19,16 +19,13 @@ struct Proof:
   hs:  uint256[2] # h ** s
   scx: uint256 # s + cx (mod q), where c = hash(g, h, gx, hx, gs, hs)
 
-struct CB:
+struct CP:
   # g and h are random points, x is a random secret scalar
   g:   uint256[2]
   h:   uint256[2]
   gx:  uint256[2] # g ** x
   hx:  uint256[2] # h ** x
   p: Proof
-
-struct DeckPrep:
-  cards: DynArray[CB, MAX_SIZE]
 # end of copy
 
 # import Deck as DeckManager
@@ -38,7 +35,7 @@ interface DeckManager:
     def newDeck(_size: uint256, _players: uint256) -> uint256: nonpayable
     def changeDealer(_id: uint256, _newAddress: address): nonpayable
     def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
-    def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep): nonpayable
+    def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DynArray[CP, 2000]): nonpayable
     def emptyProof(card: uint256[2]) -> Proof: pure
     def finishPrep(_id: uint256) -> uint256: nonpayable
     def resetShuffle(_id: uint256): nonpayable
@@ -100,7 +97,7 @@ interface RoomManager:
     def verificationTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
     def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
     def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
-    def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DeckPrep): nonpayable
+    def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DynArray[CP, 2000]): nonpayable
     def finishDeckPrep(_tableId: uint256): nonpayable
     def submitShuffle(_tableId: uint256, _seatIndex: uint256, _shuffle: DynArray[uint256[2], 2000], _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256: nonpayable
     def submitVerif(_tableId: uint256, _seatIndex: uint256, _scalars: DynArray[uint256, 256], _permutations: DynArray[DynArray[uint256, 2000], 256]): nonpayable

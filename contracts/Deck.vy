@@ -35,9 +35,6 @@ struct CP:
   hx:  uint256[2] # h ** x
   p: Proof
 
-struct DeckPrep:
-  cards: DynArray[CP, 2000]
-
 struct DrawCard:
   # successive decryptions
   c: DynArray[uint256[2], 1000]
@@ -62,7 +59,7 @@ struct Deck:
   # note: cards[i] corresponds to shuffle[_][i+1]
   cards: DynArray[DrawCard, 2000]
   # data for deck preparation
-  prep: DynArray[DeckPrep, 1000]
+  prep: DynArray[DynArray[CP, 2000], 1000]
 
 decks: HashMap[uint256, Deck]
 nextId: uint256
@@ -77,7 +74,7 @@ def newDeck(_size: uint256, _players: uint256) -> uint256:
     if i == _players:
       break
     self.decks[id].addrs.append(msg.sender)
-    self.decks[id].prep.append(empty(DeckPrep))
+    self.decks[id].prep.append([])
   self.decks[id].shuffle.append([])
   for i in range(MAX_SIZE):
     self.decks[id].shuffle[0].append(empty(uint256[2]))
@@ -97,11 +94,11 @@ def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address):
   self.decks[_id].addrs[_playerIdx] = _newAddress
 
 @external
-def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DeckPrep):
+def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DynArray[CP, 2000]):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
-  assert len(self.decks[_id].prep[_playerIdx].cards) == 0, "already prepared"
-  assert len(_prep.cards) == len(self.decks[_id].shuffle[0]), "wrong length"
-  for c in _prep.cards:
+  assert len(self.decks[_id].prep[_playerIdx]) == 0, "already prepared"
+  assert len(_prep) == len(self.decks[_id].shuffle[0]), "wrong length"
+  for c in _prep:
     assert c.hx[0] != 0 or c.hx[1] != 0, "invalid point"
   self.decks[_id].prep[_playerIdx] = _prep
 
@@ -161,14 +158,14 @@ def finishPrep(_id: uint256) -> uint256:
     for playerIdx in range(MAX_PLAYERS):
       if playerIdx == numPlayers:
         break
-      if self.chaumPederson(self.decks[_id].prep[playerIdx].cards[cardIdx]):
+      if self.chaumPederson(self.decks[_id].prep[playerIdx][cardIdx]):
         self.decks[_id].shuffle[0][cardIdx] = ecadd(
           self.decks[_id].shuffle[0][cardIdx],
-          self.decks[_id].prep[playerIdx].cards[cardIdx].hx)
+          self.decks[_id].prep[playerIdx][cardIdx].hx)
       else:
         return playerIdx
     self.decks[_id].cards.append(empty(DrawCard))
-  self.decks[_id].prep = empty(DynArray[DeckPrep, MAX_PLAYERS])
+  self.decks[_id].prep = []
   return numPlayers
 
 @external
@@ -289,7 +286,7 @@ def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
 @external
 @view
 def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool:
-  return len(self.decks[_id].prep[_playerIdx].cards) != 0
+  return len(self.decks[_id].prep[_playerIdx]) != 0
 
 @external
 @view
