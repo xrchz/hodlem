@@ -28,32 +28,6 @@ struct CP:
   p: Proof
 # end of copy
 
-# import Deck as DeckManager
-# TODO: define the interface explicitly instead of importing
-# because of https://github.com/vyperlang/titanoboa/issues/15
-interface DeckManager:
-    def newDeck(_size: uint256, _players: uint256) -> uint256: nonpayable
-    def changeDealer(_id: uint256, _newAddress: address): nonpayable
-    def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
-    def submitPrep(_id: uint256, _playerIdx: uint256, _prep: DynArray[CP, 2000]): nonpayable
-    def emptyProof(card: uint256[2]) -> Proof: pure
-    def finishPrep(_id: uint256): nonpayable
-    def resetShuffle(_id: uint256): nonpayable
-    def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: DynArray[uint256[2], 2000]): nonpayable
-    def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256): nonpayable
-    def respondChallenge(_id: uint256, _playerIdx: uint256, _data: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256: nonpayable
-    def defuseChallenge(_id: uint256, _playerIdx: uint256, _scalars: DynArray[uint256, 256], _permutations: DynArray[DynArray[uint256, 2000], 256]): nonpayable
-    def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256): nonpayable
-    def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2], _proof: Proof): nonpayable
-    def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _openIdx: uint256, _proof: Proof): nonpayable
-    def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool: view
-    def shuffleCount(_id: uint256) -> uint256: view
-    def lastShuffle(_id: uint256) -> DynArray[uint256[2], 2000]: view
-    def challengeActive(_id: uint256, _playerIdx: uint256) -> bool: view
-    def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256: view
-    def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]: view
-    def openedCard(_id: uint256, _cardIdx: uint256) -> uint256: view
-
 # copied from Room.vy
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament structure
@@ -97,10 +71,11 @@ interface RoomManager:
     def verificationTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
     def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
     def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
-    def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: DynArray[CP, 2000]): nonpayable
+    def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: CP[53]): nonpayable
     def finishDeckPrep(_tableId: uint256): nonpayable
-    def submitShuffle(_tableId: uint256, _seatIndex: uint256, _shuffle: DynArray[uint256[2], 2000], _commitment: DynArray[DynArray[uint256[2], 2000], 256]) -> uint256: nonpayable
-    def submitVerif(_tableId: uint256, _seatIndex: uint256, _scalars: DynArray[uint256, 256], _permutations: DynArray[DynArray[uint256, 2000], 256]): nonpayable
+    def submitShuffle(_tableId: uint256, _seatIndex: uint256, _shuffle: uint256[2][53], _hash: bytes32) -> uint256: nonpayable
+    def submitVerif(_tableId: uint256, _seatIndex: uint256, _commitments: DynArray[uint256[2][53], 256],
+                    _scalars: DynArray[uint256, 256], _permutations: DynArray[uint256[53], 256]): nonpayable
     def reshuffle(_tableId: uint256): nonpayable
     def setPresence(_tableId: uint256, _seatIndex: uint256, _present: bool): nonpayable
     def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _card: uint256[2], _proof: Proof): nonpayable
@@ -123,10 +98,15 @@ interface RoomManager:
     def levelBlocks(_tableId: uint256) -> uint256: view
     def numLevels(_tableId: uint256) -> uint256: view
     def level(_tableId: uint256, level: uint256) -> uint256: view
+    def configParams(_tableId: uint256) -> uint256[11]: view
+    def configStructure(_tableId: uint256) -> DynArray[uint256, 100]: view
+    def phase(_tableId: uint256) -> uint256: view
+    def deckId(_tableId: uint256) -> uint256: view
+    def commitBlock(_tableId: uint256) -> uint256: view
     def nextWaitingTable(arg0: uint256) -> uint256: view
     def prevWaitingTable(arg0: uint256) -> uint256: view
-    def nextLiveTable(arg0: uint256) -> uint256: view
-    def prevLiveTable(arg0: uint256) -> uint256: view
+    def nextLiveTable(arg0: address, arg1: uint256) -> uint256: view
+    def prevLiveTable(arg0: address, arg1: uint256) -> uint256: view
 
 T: immutable(RoomManager)
 
