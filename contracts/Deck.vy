@@ -14,9 +14,13 @@
 GROUP_ORDER: constant(uint256) = 21888242871839275222246405745257275088548364400416034343698204186575808495617
 
 # TODO: we inline these because of https://github.com/vyperlang/vyper/issues/3294
+# TODO: the SIZE is fixed, rather than using DynArrays, because of
+#       gas costs without https://github.com/vyperlang/vyper/issues/3319
+# TODO: the MAX_SECURITY is rather small because of code size
+#       costs https://github.com/vyperlang/vyper/issues/2656
 SIZE: constant(uint256) = 52
 MAX_PLAYERS: constant(uint256) = 1000 # to distinguish from SIZE when inlining
-MAX_SECURITY: constant(uint256) = 64
+MAX_SECURITY: constant(uint256) = 63
 
 struct Proof:
   # signature to confirm log_g(gx) = log_h(hx)

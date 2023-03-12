@@ -91,16 +91,18 @@ async function getActiveGames(socket) {
   return tableIds
 }
 
-const MAX_SECURITY = 64
+const MAX_SECURITY = 63
 const Phase_PREP = 2
 const Phase_SHUF = 3
 const Phase_DEAL = 4
 const Phase_PLAY = 5
 const Phase_SHOW = 6
+const Req_DECK = 0
+const Req_SHOW = 2
 
 const configKeys = [
   'buyIn', 'bond', 'startsWith', 'untilLeft', 'levelBlocks', 'verifRounds',
-  'prepBlocks', 'shuffBlocks', 'verifBlocks', 'dealBlocks', 'actBlocks']
+  'prepBlocks', 'shuffBlocks', 'verifBlocks', 'dealBlocks', 'actBlocks', 'deckId']
 
 async function getGameConfigs(socket, tableIds) {
   if (!('gameConfigs' in socket))
@@ -151,13 +153,11 @@ async function refreshActiveGames(socket) {
     socket.activeGames = {}
   await Promise.all(tableIds.map(async idNum => {
     const id = idNum.toString()
+    const numPlayers = socket.gameConfigs[id].startsWith.toNumber()
     if (!(id in socket.activeGames)) {
-      for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
+      for (const seatIndex of Array(numPlayers).keys()) {
         if (await room.playerAt(idNum, seatIndex) === socket.account.address) {
-          socket.activeGames[id] = {
-            seatIndex: seatIndex,
-            deckId: await room.deckId(idNum),
-          }
+          socket.activeGames[id] = { seatIndex: seatIndex }
           break
         }
       }
@@ -165,23 +165,43 @@ async function refreshActiveGames(socket) {
   }))
   for (const [id, data] of Object.entries(socket.activeGames)) {
     console.log(`processing ${id}`)
-    data.phase = (await room.phase(id)).toNumber(),
-    data.commitBlock = (await room.commitBlock(id)).toNumber()
+    const deckId = socket.gameConfigs[id].deckId
+    const numPlayers = socket.gameConfigs[id].startsWith.toNumber()
+    ;[data.phase, data.commitBlock] = (await room.phaseCommit(id)).map(i => i.toNumber())
     if (data.phase === Phase_PREP) {
       data.waitingOn = []
-      for (const seatIndex of Array(socket.gameConfigs[id].startsWith.toNumber()).keys()) {
-        if (!(await deck.hasSubmittedPrep(data.deckId, seatIndex))) {
+      for (const seatIndex of Array(numPlayers).keys()) {
+        if (!(await deck.hasSubmittedPrep(deckId, seatIndex))) {
           data.waitingOn.push(seatIndex)
         }
       }
     }
     if (data.phase === Phase_SHUF) {
-      data.shuffleCount = (await deck.shuffleCount(data.deckId)).toNumber()
-      if (data.shuffleCount === socket.gameConfigs[id].startsWith.toNumber()) {
+      data.shuffleCount = (await deck.shuffleCount(deckId)).toNumber()
+      if (data.shuffleCount === numPlayers) {
         data.waitingOn = []
         for (const seatIndex of Array(data.shuffleCount).keys()) {
-          if (await deck.challengeActive(data.deckId, seatIndex)) {
+          if (await deck.challengeActive(deckId, seatIndex)) {
             data.waitingOn.push(seatIndex)
+          }
+        }
+      }
+    }
+    if (data.phase === Phase_DEAL) {
+      const [cardReq, drawIndex, decryptCount, openedCard] = (
+        await room.cardInfo(id)).map(a => a.map(i => {
+          try { return i.toNumber() } catch { return i }
+        }))
+      data.waitingOn = []
+      for (const i of Array(26).keys()) {
+        if (cardReq[i] !== Req_DECK) {
+          if (decryptCount[i] === numPlayers) {
+            if (cardReq[i] === Req_SHOW && openedCard[i] === 0) {
+              data.waitingOn.push({what: i, who: drawIndex[i]})
+            }
+          }
+          else {
+            data.waitingOn.push({what: i, who: decryptCount[i]})
           }
         }
       }
@@ -287,7 +307,7 @@ async function shuffle(socket, tableId) {
   const permutation = Array.from({length: 52}, (_, i) => i + 1)
   shuffleArray(permutation)
   await db.push(`/${socket.account.address}/${tableId}/shuffle/permutation`, permutation)
-  const lastCards = await deck.lastShuffle(data.deckId)
+  const lastCards = await deck.lastShuffle(config.deckId)
   permutation.unshift(0)
   console.log(`created permutation: ${JSON.stringify(permutation)}`)
   const cards = permutation.map(i =>
@@ -322,7 +342,7 @@ const emptyPermutation = Array(53).fill(0)
 
 async function verifyShuffle(socket, tableId) {
   let challenge = await deck.challengeRnd(
-    socket.activeGames[tableId].deckId,
+    socket.gameConfigs[tableId].deckId,
     socket.activeGames[tableId].seatIndex)
   const secret = BigInt(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
   const permutation = await db.getData(`/${socket.account.address}/${tableId}/shuffle/permutation`)

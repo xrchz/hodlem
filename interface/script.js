@@ -218,6 +218,9 @@ socket.on('activeGames', (configs, data) => {
         }
       }
     }
+    if (phases[di.phase] === 'DEAL') {
+      ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+    }
   })
 })
 

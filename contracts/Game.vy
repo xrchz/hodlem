@@ -8,9 +8,7 @@
 # TODO: add penalties (instead of full abort on failure)?
 
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
-MAX_SIZE: constant(uint256) = 2000
 MAX_PLAYERS: constant(uint256) = 1000 # to distinguish from MAX_SIZE when inlining
-MAX_SECURITY: constant(uint256) = 256
 
 struct Proof:
   # signature to confirm log_g(gx) = log_h(hx)
@@ -98,11 +96,10 @@ interface RoomManager:
     def levelBlocks(_tableId: uint256) -> uint256: view
     def numLevels(_tableId: uint256) -> uint256: view
     def level(_tableId: uint256, level: uint256) -> uint256: view
-    def configParams(_tableId: uint256) -> uint256[11]: view
+    def configParams(_tableId: uint256) -> uint256[12]: view
     def configStructure(_tableId: uint256) -> DynArray[uint256, 100]: view
-    def phase(_tableId: uint256) -> uint256: view
-    def deckId(_tableId: uint256) -> uint256: view
-    def commitBlock(_tableId: uint256) -> uint256: view
+    def phaseCommit(_tableId: uint256) -> uint256[2]: view
+    def cardInfo(_tableId: uint256) -> uint256[26][4]: view
     def nextWaitingTable(arg0: uint256) -> uint256: view
     def prevWaitingTable(arg0: uint256) -> uint256: view
     def nextLiveTable(arg0: address, arg1: uint256) -> uint256: view

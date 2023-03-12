@@ -2,7 +2,7 @@
 
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
 SIZE: constant(uint256) = 52
-MAX_SECURITY: constant(uint256) = 64
+MAX_SECURITY: constant(uint256) = 63
 
 struct Proof:
   # signature to confirm log_g(gx) = log_h(hx)
@@ -347,9 +347,9 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
 
 @external
 def submitVerif(_tableId: uint256, _seatIndex: uint256,
-                _commitments: uint256[2][53][64],
-                _scalars: uint256[64],
-                _permutations: uint256[53][64]):
+                _commitments: uint256[2][53][63],
+                _scalars: uint256[63],
+                _permutations: uint256[53][63]):
   self.validatePhase(_tableId, Phase_SHUF)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
   self.tables[_tableId].shuffled |= shift(1, _seatIndex)
@@ -380,15 +380,18 @@ def autoShuffle(_tableId: uint256):
 
 @internal
 def autoVerif(_tableId: uint256):
-  for seatIndex in range(MAX_SEATS):
-    if seatIndex == self.tables[_tableId].config.startsWith:
+  end: uint256 = shift(1, self.tables[_tableId].config.startsWith)
+  cur: uint256 = 1
+  for _ in range(MAX_SEATS):
+    if cur == end:
       self.finishShuffle(_tableId)
-    if self.tables[_tableId].shuffled & shift(1, seatIndex) == 0:
-      if self.tables[_tableId].present & shift(1, seatIndex) == 0:
-        self.tables[_tableId].shuffled |= shift(1, seatIndex)
+    if self.tables[_tableId].shuffled & cur == 0:
+      if self.tables[_tableId].present & cur == 0:
+        self.tables[_tableId].shuffled |= cur
       else:
         self.tables[_tableId].commitBlock = block.number
         break
+    cur = shift(cur, 1)
 
 @internal
 def finishShuffle(_tableId: uint256):
@@ -533,11 +536,16 @@ def authorised(_tableId: uint256, _phase: uint256,
 def gameId(_tableId: uint256) -> uint256:
   return self.tables[_tableId].gameId
 
+@internal
+@view
+def _cardAt(_tableId: uint256, _deckIndex: uint256) -> uint256:
+  return self.tables[_tableId].deck.openedCard(
+    self.tables[_tableId].deckId, _deckIndex)
+
 @external
 @view
 def cardAt(_tableId: uint256, _deckIndex: uint256) -> uint256:
-  return self.tables[_tableId].deck.openedCard(
-    self.tables[_tableId].deckId, _deckIndex)
+  return self._cardAt(_tableId, _deckIndex)
 
 @external
 @view
@@ -588,7 +596,7 @@ def level(_tableId: uint256, level: uint256) -> uint256:
 
 @external
 @view
-def configParams(_tableId: uint256) -> uint256[11]:
+def configParams(_tableId: uint256) -> uint256[12]:
   return [
     self.tables[_tableId].config.buyIn,
     self.tables[_tableId].config.bond,
@@ -600,7 +608,8 @@ def configParams(_tableId: uint256) -> uint256[11]:
     self.tables[_tableId].config.shuffBlocks,
     self.tables[_tableId].config.verifBlocks,
     self.tables[_tableId].config.dealBlocks,
-    self.tables[_tableId].config.actBlocks
+    self.tables[_tableId].config.actBlocks,
+    self.tables[_tableId].deckId
   ]
 
 @external
@@ -610,15 +619,17 @@ def configStructure(_tableId: uint256) -> DynArray[uint256, 100]:
 
 @external
 @view
-def phase(_tableId: uint256) -> uint256:
-  return self.tables[_tableId].phase
+def phaseCommit(_tableId: uint256) -> uint256[2]:
+  return [self.tables[_tableId].phase,
+          self.tables[_tableId].commitBlock]
 
 @external
 @view
-def deckId(_tableId: uint256) -> uint256:
-  return self.tables[_tableId].deckId
-
-@external
-@view
-def commitBlock(_tableId: uint256) -> uint256:
-  return self.tables[_tableId].commitBlock
+def cardInfo(_tableId: uint256) -> uint256[26][4]:
+  result: uint256[26][4] = empty(uint256[26][4])
+  for cardIndex in range(26):
+    result[0][cardIndex] = self.tables[_tableId].requirement[cardIndex]
+    result[1][cardIndex] = self.tables[_tableId].drawIndex[cardIndex]
+    result[2][cardIndex] = self.decryptCount(_tableId, cardIndex)
+    result[3][cardIndex] = self._cardAt(_tableId, cardIndex)
+  return result
