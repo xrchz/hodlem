@@ -179,7 +179,7 @@ socket.on('activeGames', (configs, data) => {
         if (di.waitingOn.includes(di.seatIndex)) {
           const button = li.appendChild(document.createElement('input'))
           button.type = 'button'
-          button.value = 'Submit Deck Preparation'
+          button.value = 'Submit preparation'
           button.addEventListener('click', _ => {
             socket.emit('submitPrep', config.id)
           })
@@ -188,7 +188,7 @@ socket.on('activeGames', (configs, data) => {
       else {
         const button = li.appendChild(document.createElement('input'))
         button.type = 'button'
-        button.value = 'Finish Preparation'
+        button.value = 'Finish preparation'
         button.addEventListener('click', _ => {
           socket.emit('finishPrep', config.id)
         })
@@ -200,7 +200,7 @@ socket.on('activeGames', (configs, data) => {
         if (di.shuffleCount === di.seatIndex) {
           const button = li.appendChild(document.createElement('input'))
           button.type = 'button'
-          button.value = 'Submit Your Shuffle'
+          button.value = 'Submit shuffle'
           button.addEventListener('click', _ => {
             socket.emit('submitShuffle', config.id)
           })
@@ -211,7 +211,7 @@ socket.on('activeGames', (configs, data) => {
         if (di.waitingOn.includes(di.seatIndex)) {
           const button = li.appendChild(document.createElement('input'))
           button.type = 'button'
-          button.value = 'Verify Your Shuffle'
+          button.value = 'Verify shuffle'
           button.addEventListener('click', _ => {
             socket.emit('submitVerif', config.id)
           })
