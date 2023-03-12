@@ -8,6 +8,7 @@ import { createServer } from 'http'
 import { Server as SocketIOServer } from 'socket.io'
 import { JsonDB, Config as JsonDBConfig } from 'node-json-db'
 import { bn254 } from '@noble/curves/bn'
+import { invert } from '@noble/curves/abstract/modular'
 
 const app = express()
 const dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -193,11 +194,13 @@ async function refreshActiveGames(socket) {
           try { return i.toNumber() } catch { return i }
         }))
       data.waitingOn = []
+      data.drawIndex = {}
       for (const i of Array(26).keys()) {
         if (cardReq[i] !== Req_DECK) {
+          data.drawIndex[i] = drawIndex[i]
           if (decryptCount[i] === numPlayers) {
             if (cardReq[i] === Req_SHOW && openedCard[i] === 0) {
-              data.waitingOn.push({what: i, who: drawIndex[i]})
+              data.waitingOn.push({what: i, who: drawIndex[i], open: true})
             }
           }
           else {
@@ -239,6 +242,13 @@ function bytesToUint256(a) {
 function pointToUints(p) {
   const a = p.toAffine()
   return [a.x, a.y]
+}
+
+function bigIntegersToPoint(a) {
+  return bn254.ProjectivePoint.fromAffine({
+    x: BigInt(a[0].toString()),
+    y: BigInt(a[1].toString())
+  })
 }
 
 function pointToBytes(p) {
@@ -312,10 +322,7 @@ async function shuffle(socket, tableId) {
   console.log(`created permutation: ${JSON.stringify(permutation)}`)
   const cards = permutation.map(i =>
     pointToUints(
-      bn254.ProjectivePoint.fromAffine(
-        {x: BigInt(lastCards[i][0].toString()),
-         y: BigInt(lastCards[i][1].toString())})
-      .multiply(x)
+      bigIntegersToPoint(lastCards[i]).multiply(x)
     )
   )
   const secrets = Array.from({length: config.formatted.verifRounds}, _ => randomScalar())
@@ -367,6 +374,45 @@ async function verifyShuffle(socket, tableId) {
   scalars.push(...Array.from(pad, _ => 0))
   responsePermutations.push(...Array.from(pad, _ => emptyPermutation))
   return [commitment, scalars, responsePermutations]
+}
+
+const emptyProof = {gs: [0, 0], hs: [0, 0], scx: 0}
+
+async function decryptCard(socket, tableId, cardIndex) {
+  const deckId = socket.gameConfigs[tableId].deckId
+  const lastDecrypt = await deck.lastDecrypt(deckId, cardIndex)
+  const data = socket.activeGames[tableId]
+  if (data.drawIndex[cardIndex] === data.seatIndex) {
+    return [lastDecrypt, emptyProof]
+  }
+  else {
+    /*
+      g: self.decks[_id].shuffle[_playerIdx][0],
+      h: _card, <- aka decrypt
+      gx: self.decks[_id].shuffle[unsafe_add(_playerIdx, 1)][0],
+      hx: self.decks[_id].cards[_cardIdx].c[_playerIdx], <- aka lastDecrypt
+    */
+    const secret = BigInt(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
+    const inverse = invert(secret, bn254.CURVE.n)
+    const hx = bigIntegersToPoint(lastDecrypt)
+    const decrypt = hx.multiply(inverse)
+    const g = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex))
+    const gx = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex + 1))
+    const s = randomScalar()
+    const gs = g.multiply(s)
+    const hs = decrypt.multiply(s)
+    const toHash = new Uint8Array(6 * 64)
+    ;[g, decrypt, gx, hx, gs, hs].forEach((p, i) => {
+      toHash.set(pointToBytes(p), i * 64)
+    })
+    const c = bytesToUint256(bn254.CURVE.hash(toHash))
+    const proof = {
+        gs: pointToUints(gs),
+        hs: pointToUints(hs),
+        scx: (s + c * secret) % bn254.CURVE.n
+      }
+    return [pointToUints(decrypt), proof]
+  }
 }
 
 async function refreshNetworkInfo(socket) {
@@ -585,6 +631,32 @@ io.on('connection', async socket => {
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
           }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
+  socket.on('decryptCard', async (tableId, cardIndex) => {
+    try {
+      const [card, proof] = await decryptCard(socket, tableId, cardIndex)
+      socket.emit('requestTransaction',
+        await room.connect(socket.account).populateTransaction
+        .decryptCard(
+          tableId, socket.activeGames[tableId].seatIndex, cardIndex,
+          card, proof, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
+  socket.on('openCard', async(tableId, cardIndex) => {
+    try {
+          // TODO
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())

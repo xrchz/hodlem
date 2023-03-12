@@ -220,6 +220,15 @@ socket.on('activeGames', (configs, data) => {
     }
     if (phases[di.phase] === 'DEAL') {
       ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+      const requests = di.waitingOn.flatMap(({who, what, open}) => (who === di.seatIndex ? [[what, open]] : []))
+      requests.forEach(([i, open]) => {
+        const button = ul.appendChild(document.createElement('li')).appendChild(document.createElement('input'))
+        button.type = 'button'
+        button.value = `Deal card ${i}`
+        button.addEventListener('click', _ => {
+          socket.emit(open ? 'openCard' : 'decryptCard', config.id, i)
+        })
+      })
     }
   })
 })

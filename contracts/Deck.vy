@@ -222,7 +222,7 @@ def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
   assert self.decks[_id].cards[_cardIdx].drawnTo != 0, "not drawn"
   assert len(self.decks[_id].cards[_cardIdx].c) == unsafe_add(_playerIdx, 1), "out of turn"
-  if _playerIdx == self.decks[_id].cards[_cardIdx].drawnTo:
+  if unsafe_add(_playerIdx, 1) == self.decks[_id].cards[_cardIdx].drawnTo:
     assert self.pointEq(_card, self.decks[_id].cards[_cardIdx].c[_playerIdx]), "wrong card"
   else:
     assert self.chaumPederson(CP({
@@ -289,6 +289,11 @@ def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256:
 def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]:
   return self.decks[_id].cards[_cardIdx].c[
     unsafe_sub(len(self.decks[_id].cards[_cardIdx].c), 1)]
+
+@external
+@view
+def shuffleBase(_id: uint256, _idx: uint256) -> uint256[2]:
+  return self.decks[_id].shuffle[_idx][0]
 
 @external
 @view
