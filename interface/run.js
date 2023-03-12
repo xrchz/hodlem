@@ -52,7 +52,7 @@ async function refreshBalance(socket) {
   }
   socket.emit('balance',
     socket.account && socket.account.privateKey != ''
-    ? ethers.utils.formatUnits(await b(), 'ether')
+    ? ethers.utils.formatEther(await b())
     : '')
 }
 
@@ -120,10 +120,10 @@ async function getGameConfigs(socket, tableIds) {
       })
       data.formatted = Object.fromEntries(
         configKeys.map(k => [k, ['bond', 'buyIn'].includes(k)
-                                ? ethers.utils.formatUnits(data[k], 'ether')
+                                ? ethers.utils.formatEther(data[k])
                                 : data[k].toNumber()]))
       data.formatted.id = data.id
-      data.formatted.structure = data.structure.map(x => ethers.utils.formatUnits(x, 'ether'))
+      data.formatted.structure = data.structure.map(x => ethers.utils.formatEther(x))
       console.log('...done [config]')
     }
   }))
@@ -231,12 +231,10 @@ async function refreshActiveGames(socket) {
         for (const idx of gameData.hands[data.seatIndex])
           data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
         data.stack = gameData.stack.slice(numPlayers)
-        data.bet = gameData.bet
-        data.pot = gameData.pot
-        data.dealer = gameData.dealer
-        if (data.board[0].isZero() && gameData.actionBlock.isZero()) {
-          data.postBlinds = true
-        }
+        data.bet = gameData.bet.slice(0, numPlayers).map(b => ethers.utils.formatEther(b))
+        data.pot = gameData.pot.slice(0, numPlayers).flatMap(p => p.isZero() ? [] : [ethers.utils.formatEther(p)])
+        data.dealer = gameData.dealer.toNumber()
+        data.postBlinds = data.board[0].isZero() && gameData.actionBlock.isZero()
       }
     }
   }

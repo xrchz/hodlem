@@ -266,7 +266,11 @@ socket.on('activeGames', (configs, data) => {
         })
       }
       else {
+        ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
         ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
+        const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
+        ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
+        ul.appendChild(document.createElement('li')).innerText = `Pots: ${di.pot}`
         if (di.postBlinds) {
           const button = li.appendChild(document.createElement('input'))
           button.type = 'button'
