@@ -170,6 +170,7 @@ async function refreshActiveGames(socket) {
     const deckId = config.deckId
     const numPlayers = config.formatted.startsWith
     ;[data.phase, data.commitBlock] = (await room.phaseCommit(id)).map(i => i.toNumber())
+    delete data.toDeal
     if (data.phase === Phase_PREP) {
       data.waitingOn = []
       for (const seatIndex of Array(numPlayers).keys()) {
@@ -179,13 +180,18 @@ async function refreshActiveGames(socket) {
       }
     }
     if (data.phase === Phase_SHUF) {
+      let shuffled = await room.shuffled(id)
       data.shuffleCount = (await deck.shuffleCount(deckId)).toNumber()
       if (data.shuffleCount === numPlayers) {
         data.waitingOn = []
         for (const seatIndex of Array(data.shuffleCount).keys()) {
-          if (await deck.challengeActive(deckId, seatIndex)) {
+          if (shuffled.mod(2).isZero()) {
             data.waitingOn.push(seatIndex)
           }
+          shuffled = shuffled.div(2)
+        }
+        if (!(shuffled.isZero())) {
+          data.toDeal = ((await game.games(id)).startBlock.isZero()) ? 'high card' : 'hole cards'
         }
       }
     }
@@ -219,14 +225,11 @@ async function refreshActiveGames(socket) {
         }
         data.selectDealer = true
       }
-      else if ((await room.deckIndex(id)).isZero()) {
-        data.dealHoleCards = true
-      }
       else {
         data.board = gameData.board
         data.hand = []
         for (const idx of gameData.hands[data.seatIndex])
-          data.hand.push(await lookAtCard(socket, id, deckId, idx))
+          data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
         data.stack = gameData.stack.slice(numPlayers)
         data.bet = gameData.bet
         data.pot = gameData.pot
@@ -726,8 +729,11 @@ io.on('connection', async socket => {
 
   socket.on('endDeal', simpleTxn(socket, room, 'endDeal'))
 
-  socket.on('drawForDealer', simpleTxn(socket, room, 'drawForDealer'))
+  socket.on('dealHighCard', simpleTxn(socket, game, 'dealHighCard'))
 
   socket.on('selectDealer', simpleTxn(socket, game, 'selectDealer'))
 
+  socket.on('dealHoleCards', simpleTxn(socket, game, 'dealHoleCards'))
+
+  socket.on('postBlinds', simpleTxn(socket, game, 'postBlinds'))
 })

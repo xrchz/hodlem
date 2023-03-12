@@ -299,6 +299,7 @@ def finishDeckPrep(_tableId: uint256):
     self.tables[_tableId].drawIndex[seatIndex] = seatIndex
     self.tables[_tableId].requirement[seatIndex] = Req_SHOW
   self.tables[_tableId].phase = Phase_SHUF
+  self.tables[_tableId].nextPhase = Phase_PLAY
   self.tables[_tableId].commitBlock = block.number
 
 # shuffle
@@ -327,7 +328,9 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
                 _permutations: uint256[53][63]):
   self.validatePhase(_tableId, Phase_SHUF)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
-  self.tables[_tableId].shuffled |= shift(1, _seatIndex)
+  bit: uint256 = shift(1, _seatIndex)
+  assert self.tables[_tableId].shuffled & bit == 0, "already verified"
+  self.tables[_tableId].shuffled ^= bit
   for i in range(MAX_SECURITY):
     if i == self.tables[_tableId].config.verifRounds: break
     self.tables[_tableId].deck.defuseNextChallenge(
@@ -359,26 +362,14 @@ def autoVerif(_tableId: uint256):
   cur: uint256 = 1
   for _ in range(MAX_SEATS):
     if cur == end:
-      self.finishShuffle(_tableId)
+      self.tables[_tableId].shuffled |= cur
+      break
     if self.tables[_tableId].shuffled & cur == 0:
       if self.tables[_tableId].present & cur == 0:
         self.tables[_tableId].shuffled |= cur
       else:
-        self.tables[_tableId].commitBlock = block.number
         break
     cur = shift(cur, 1)
-
-@internal
-def finishShuffle(_tableId: uint256):
-  self.tables[_tableId].phase = Phase_DEAL
-  self.tables[_tableId].nextPhase = Phase_PLAY
-  for cardIndex in range(26):
-    if self.tables[_tableId].requirement[cardIndex] != Req_DECK:
-      self.tables[_tableId].deck.drawCard(
-        self.tables[_tableId].deckId,
-        self.tables[_tableId].drawIndex[cardIndex],
-        cardIndex)
-      self.autoDecrypt(_tableId, cardIndex)
   self.tables[_tableId].commitBlock = block.number
 
 @external
@@ -386,6 +377,8 @@ def reshuffle(_tableId: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   self.tables[_tableId].deck.resetShuffle(self.tables[_tableId].deckId)
   self.tables[_tableId].shuffled = 0
+  self.tables[_tableId].requirement = empty(uint256[26])
+  self.tables[_tableId].deckIndex = 0
   self.tables[_tableId].phase = Phase_SHUF
   self.tables[_tableId].commitBlock = block.number
 
@@ -461,10 +454,10 @@ def endDeal(_tableId: uint256):
   self.tables[_tableId].phase = self.tables[_tableId].nextPhase
 
 @external
-def startDeal(_tableId: uint256):
+def startDeal(_tableId: uint256, _nextPhase: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
-  self.tables[_tableId].nextPhase = self.tables[_tableId].phase
   self.tables[_tableId].phase = Phase_DEAL
+  self.tables[_tableId].nextPhase = _nextPhase
   self.tables[_tableId].commitBlock = block.number
 
 @external
@@ -561,6 +554,11 @@ def numLevels(_tableId: uint256) -> uint256:
 @view
 def level(_tableId: uint256, level: uint256) -> uint256:
   return self.tables[_tableId].config.structure[level]
+
+@external
+@view
+def shuffled(_tableId: uint256) -> uint256:
+  return self.tables[_tableId].shuffled
 
 # for off-chain viewing
 

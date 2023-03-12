@@ -226,6 +226,14 @@ socket.on('activeGames', (configs, data) => {
         }
       }
     }
+    if (di.toDeal) {
+      const button = li.appendChild(document.createElement('input'))
+      button.type = 'button'
+      button.value = `Deal ${di.toDeal}`
+      button.addEventListener('click', _ => {
+        socket.emit(`deal${di.toDeal.split(' ').map(s => s[0].toUpperCase() + s.slice(1)).join('')}`, config.id)
+      })
+    }
     if (phases[di.phase] === 'DEAL') {
       ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
       const requests = di.waitingOn.flatMap(({who, what, open}) => (who === di.seatIndex ? [[what, open]] : []))
@@ -257,16 +265,17 @@ socket.on('activeGames', (configs, data) => {
           socket.emit('selectDealer', config.id)
         })
       }
-      else if (di.dealHoleCards) {
-        const button = li.appendChild(document.createElement('input'))
-        button.type = 'button'
-        button.value = 'Deal hole cards'
-        button.addEventListener('click', _ => {
-          socket.emit('dealHoleCards', config.id)
-        })
-      }
       else {
-
+        ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
+        if (di.postBlinds) {
+          const button = li.appendChild(document.createElement('input'))
+          button.type = 'button'
+          button.value = 'Post blinds'
+          button.addEventListener('click', _ => {
+            socket.emit('postBlinds', config.id)
+          })
+        }
+        ul.appendChild(document.createElement('li')).innerText = 'TODO: make moves'
       }
     }
   })

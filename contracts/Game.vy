@@ -1,9 +1,9 @@
 # @version ^0.3.7
 # no-limit hold'em sit-n-go single-table tournaments
 
-# TODO: add event logs
-# TODO: make a frontend
+# TODO: finish frontend
 # TODO: add pause?
+# TODO: add event logs?
 # TODO: add rake (rewards tabs for progress txns)?
 # TODO: add penalties (instead of full abort on failure)?
 
@@ -79,7 +79,7 @@ interface RoomManager:
     def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _card: uint256[2], _proof: Proof): nonpayable
     def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _openIndex: uint256, _proof: Proof): nonpayable
     def endDeal(_tableId: uint256): nonpayable
-    def startDeal(_tableId: uint256): nonpayable
+    def startDeal(_tableId: uint256, _nextPhase: uint256): nonpayable
     def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256: nonpayable
     def showCard(_tableId: uint256, _cardIndex: uint256): nonpayable
     def burnCard(_tableId: uint256): nonpayable
@@ -95,6 +95,7 @@ interface RoomManager:
     def levelBlocks(_tableId: uint256) -> uint256: view
     def numLevels(_tableId: uint256) -> uint256: view
     def level(_tableId: uint256, level: uint256) -> uint256: view
+    def shuffled(_tableId: uint256) -> uint256: view
     def configParams(_tableId: uint256) -> uint256[12]: view
     def configStructure(_tableId: uint256) -> DynArray[uint256, 100]: view
     def phaseCommit(_tableId: uint256) -> uint256[2]: view
@@ -129,31 +130,26 @@ games: public(HashMap[uint256, Game])
 
 PENDING_REVEAL: constant(uint256) = 53
 
+@internal
+def afterShuffle(_numPlayers: uint256, _tableId: uint256) -> bool:
+  return (T.authorised(_tableId, Phase_SHUF) and
+          shift(T.shuffled(_tableId), -convert(_numPlayers, int128)) != 0)
+
 @external
-def selectDealer(_tableId: uint256):
-  assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
-  assert self.games[_tableId].startBlock == empty(uint256), "already started"
-  highestCard: uint256 = empty(uint256)
-  highestCardSeatIndex: uint256 = empty(uint256)
-  for seatIndex in range(MAX_PLAYERS):
-    if seatIndex == T.numPlayers(_tableId):
-      break
-    self.games[_tableId].liveUntil[seatIndex] = 1
-    self.games[_tableId].stack[seatIndex] = T.buyIn(_tableId)
-    card: uint256 = T.cardAt(_tableId, seatIndex)
-    if highestCard < card:
-      highestCard = card
-      highestCardSeatIndex = seatIndex
-  self.games[_tableId].dealer = highestCardSeatIndex
-  self.games[_tableId].startBlock = block.number
-  T.reshuffle(_tableId)
+def dealHighCard(_tableId: uint256):
+  numPlayers: uint256 = T.numPlayers(_tableId)
+  assert (self.afterShuffle(numPlayers, _tableId) and
+          self.games[_tableId].startBlock == empty(uint256)), "wrong phase"
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == numPlayers: break
+    T.showCard(_tableId, T.dealTo(_tableId, seatIndex))
+  T.startDeal(_tableId, Phase_PLAY)
 
 @external
 def dealHoleCards(_tableId: uint256):
-  assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
-  assert self.games[_tableId].startBlock != empty(uint256), "not started"
-  assert T.deckIndex(_tableId) == 0, "already dealt"
   numPlayers: uint256 = T.numPlayers(_tableId)
+  assert (self.afterShuffle(numPlayers, _tableId) and
+          self.games[_tableId].startBlock != empty(uint256)), "wrong phase"
   seatIndex: uint256 = self.games[_tableId].dealer
   self.games[_tableId].betIndex = seatIndex
   for i in range(2):
@@ -162,7 +158,27 @@ def dealHoleCards(_tableId: uint256):
       self.games[_tableId].hands[seatIndex][i] = T.dealTo(_tableId, seatIndex)
       if seatIndex == self.games[_tableId].dealer:
         break
-  T.startDeal(_tableId)
+  T.startDeal(_tableId, Phase_PLAY)
+
+@external
+def selectDealer(_tableId: uint256):
+  assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
+  assert self.games[_tableId].startBlock == empty(uint256), "already started"
+  numPlayers: uint256 = T.numPlayers(_tableId)
+  highestCard: uint256 = empty(uint256)
+  highestCardSeatIndex: uint256 = empty(uint256)
+  for seatIndex in range(MAX_PLAYERS):
+    if seatIndex == numPlayers:
+      break
+    self.games[_tableId].liveUntil[seatIndex] = 1
+    self.games[_tableId].stack[seatIndex] = T.buyIn(_tableId)
+    card: uint256 = T.cardAt(_tableId, seatIndex)
+    if highestCard < card:
+      highestCard = card
+      highestCardSeatIndex = seatIndex
+  self.games[_tableId].startBlock = block.number
+  T.reshuffle(_tableId)
+  self.games[_tableId].dealer = highestCardSeatIndex
 
 @external
 def postBlinds(_tableId: uint256):
@@ -281,7 +297,7 @@ def showCards(_tableId: uint256, _seatIndex: uint256):
   self.validateTurn(_tableId, _seatIndex, Phase_SHOW)
   T.showCard(_tableId, self.games[_tableId].hands[_seatIndex][0])
   T.showCard(_tableId, self.games[_tableId].hands[_seatIndex][1])
-  T.startDeal(_tableId)
+  T.startDeal(_tableId, Phase_SHOW)
 
 @external
 def foldCards(_tableId: uint256, _seatIndex: uint256):
@@ -345,10 +361,17 @@ def endShow(_tableId: uint256):
     elif self.playersLeft(numPlayers, _tableId) <= T.maxPlayers(_tableId):
       self.gameOver(numPlayers, _tableId)
     else:
-      self.removeEliminated(numPlayers, _tableId)
-      T.reshuffle(_tableId)
+      self.nextRound(numPlayers, _tableId)
   else:
     self.games[_tableId].actionBlock = block.number
+
+@internal
+def nextRound(_numPlayers: uint256, _tableId: uint256):
+  self.removeEliminated(_numPlayers, _tableId)
+  T.reshuffle(_tableId)
+  dealer: uint256 = self.games[_tableId].dealer
+  self.games[_tableId].betIndex = dealer
+  self.games[_tableId].dealer = self.roundNextActor(_numPlayers, _tableId, dealer)
 
 @internal
 def collectPots(_numPlayers: uint256, _gameId: uint256):
@@ -438,7 +461,7 @@ def drawNextCard(_tableId: uint256):
     self.drawToBoard(_tableId, 3)
   else: # river
     self.drawToBoard(_tableId, 4)
-  T.startDeal(_tableId)
+  T.startDeal(_tableId, Phase_PLAY)
 
 @internal
 def afterAct(_tableId: uint256, _seatIndex: uint256):
@@ -454,8 +477,7 @@ def afterAct(_tableId: uint256, _seatIndex: uint256):
       if self.playersLeft(numPlayers, _tableId) <= T.maxPlayers(_tableId):
         self.gameOver(numPlayers, _tableId)
       else:
-        self.removeEliminated(numPlayers, _tableId)
-        T.reshuffle(_tableId)
+        self.nextRound(numPlayers, _tableId)
     elif self.games[_tableId].board[4] == empty(uint256):
       self.drawNextCard(_tableId)
     else:
