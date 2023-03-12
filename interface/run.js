@@ -497,6 +497,22 @@ async function changeAccount(socket) {
   await refreshActiveGames(socket)
 }
 
+function simpleTxn(socket, contract, func) {
+  return async tableId => {
+    try {
+      socket.emit('requestTransaction',
+        await contract.connect(socket.account).populateTransaction[func](
+          tableId, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  }
+}
+
 io.on('connection', async socket => {
   await refreshNetworkInfo(socket)
 
@@ -620,20 +636,7 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('startGame', async tableId => {
-    try {
-      socket.emit('requestTransaction',
-        await room.connect(socket.account).populateTransaction
-        .startGame(
-          tableId, {
-            maxFeePerGas: socket.feeData.maxFeePerGas,
-            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-          }))
-    }
-    catch (e) {
-      socket.emit('errorMsg', e.toString())
-    }
-  })
+  socket.on('startGame', simpleTxn(socket, room, 'startGame'))
 
   socket.on('submitPrep', async tableId => {
     try {
@@ -651,20 +654,7 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('finishPrep', async tableId => {
-    try {
-      socket.emit('requestTransaction',
-        await room.connect(socket.account).populateTransaction
-        .finishDeckPrep(
-          tableId, {
-            maxFeePerGas: socket.feeData.maxFeePerGas,
-            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-          }))
-    }
-    catch (e) {
-      socket.emit('errorMsg', e.toString())
-    }
-  })
+  socket.on('finishPrep', simpleTxn(socket, room, 'finishDeckPrep'))
 
   socket.on('submitShuffle', async tableId => {
     try {
@@ -717,7 +707,7 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('openCard', async(tableId, cardIndex) => {
+  socket.on('openCard', async (tableId, cardIndex) => {
     try {
       const [openIndex, proof] = await revealCard(socket, tableId, cardIndex)
       socket.emit('requestTransaction',
@@ -734,33 +724,10 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('endDeal', async(tableId) => {
-    try {
-      socket.emit('requestTransaction',
-        await room.connect(socket.account).populateTransaction
-        .endDeal(
-          tableId, {
-            maxFeePerGas: socket.feeData.maxFeePerGas,
-            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-          }))
-    }
-    catch (e) {
-      socket.emit('errorMsg', e.toString())
-    }
-  })
+  socket.on('endDeal', simpleTxn(socket, room, 'endDeal'))
 
-  socket.on('selectDealer', async(tableId) => {
-    try {
-      socket.emit('requestTransaction',
-        await game.connect(socket.account).populateTransaction
-        .selectDealer(
-          tableId, {
-            maxFeePerGas: socket.feeData.maxFeePerGas,
-            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-          }))
-    }
-    catch (e) {
-      socket.emit('errorMsg', e.toString())
-    }
-  })
+  socket.on('drawForDealer', simpleTxn(socket, room, 'drawForDealer'))
+
+  socket.on('selectDealer', simpleTxn(socket, game, 'selectDealer'))
+
 })
