@@ -164,6 +164,14 @@ socket.on('pendingGames', (configs, seats) => {
 
 const phases = ['NONE', 'JOIN', 'PREP', 'SHUF', 'DEAL', 'PLAY', 'SHOW']
 
+function cardChar(card) {
+  let codepoint = 0x1F000
+  codepoint += 0xA0 + 16 * Math.floor(card / 13)
+  const rank = card % 13
+  codepoint += rank === 12 ? 1 : rank + 2 + (9 < rank)
+  return String.fromCodePoint(codepoint)
+}
+
 socket.on('activeGames', (configs, data) => {
   playDiv.replaceChildren()
   configs.forEach(config => {
@@ -229,13 +237,36 @@ socket.on('activeGames', (configs, data) => {
           socket.emit(open ? 'openCard' : 'decryptCard', config.id, i)
         })
       })
-      if (!requests.length) {
+      if (!di.waitingOn.length) {
         const button = li.appendChild(document.createElement('input'))
         button.type = 'button'
         button.value = 'Finish deal'
         button.addEventListener('click', _ => {
           socket.emit('endDeal', config.id)
         })
+      }
+    }
+    if (phases[di.phase] === 'PLAY') {
+      if (di.selectDealer) {
+        const drawn = di.cards.map((card, seat) => ({[seat]: cardChar(card - 1)}))
+        ul.appendChild(document.createElement('li')).innerText = `Drawn cards: ${JSON.stringify(drawn)}`
+        const button = li.appendChild(document.createElement('input'))
+        button.type = 'button'
+        button.value = 'Select dealer'
+        button.addEventListener('click', _ => {
+          socket.emit('selectDealer', config.id)
+        })
+      }
+      else if (di.dealHoleCards) {
+        const button = li.appendChild(document.createElement('input'))
+        button.type = 'button'
+        button.value = 'Deal hole cards'
+        button.addEventListener('click', _ => {
+          socket.emit('dealHoleCards', config.id)
+        })
+      }
+      else {
+
       }
     }
   })

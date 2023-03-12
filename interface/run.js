@@ -166,8 +166,9 @@ async function refreshActiveGames(socket) {
   }))
   for (const [id, data] of Object.entries(socket.activeGames)) {
     console.log(`processing ${id}`)
-    const deckId = socket.gameConfigs[id].deckId
-    const numPlayers = socket.gameConfigs[id].startsWith.toNumber()
+    const config = socket.gameConfigs[id]
+    const deckId = config.deckId
+    const numPlayers = config.formatted.startsWith
     ;[data.phase, data.commitBlock] = (await room.phaseCommit(id)).map(i => i.toNumber())
     if (data.phase === Phase_PREP) {
       data.waitingOn = []
@@ -206,6 +207,32 @@ async function refreshActiveGames(socket) {
           else {
             data.waitingOn.push({what: i, who: decryptCount[i]})
           }
+        }
+      }
+    }
+    if (data.phase === Phase_PLAY) {
+      const gameData = await game.games(id)
+      if (gameData.startBlock.isZero()) {
+        data.cards = []
+        for (const seatIndex of Array(numPlayers).keys()) {
+          data.cards.push((await deck.openedCard(deckId, seatIndex)).toNumber())
+        }
+        data.selectDealer = true
+      }
+      else if ((await room.deckIndex(id)).isZero()) {
+        data.dealHoleCards = true
+      }
+      else {
+        data.board = gameData.board
+        data.hand = []
+        for (const idx of gameData.hands[data.seatIndex])
+          data.hand.push(await lookAtCard(socket, id, deckId, idx))
+        data.stack = gameData.stack.slice(numPlayers)
+        data.bet = gameData.bet
+        data.pot = gameData.pot
+        data.dealer = gameData.dealer
+        if (data.board[0].isZero() && gameData.actionBlock.isZero()) {
+          data.postBlinds = true
         }
       }
     }
@@ -415,21 +442,26 @@ async function decryptCard(socket, tableId, cardIndex) {
   }
 }
 
+async function lookAtCard(socket, tableId, deckId, cardIndex) {
+  const secret = BigInt(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
+  const inverse = invert(secret, bn254.CURVE.n)
+  const bases = (await deck.baseCards(deckId)).map(c => bigIntegersToPoint(c))
+  const lastDecrypt = bigIntegersToPoint(await deck.lastDecrypt(deckId, cardIndex))
+  let openIndex = 0
+  for (const b of bases) {
+    if (lastDecrypt.multiply(inverse).equals(bases[openIndex])) break
+    openIndex += 1
+  }
+  return {openIndex, card: bases[openIndex], lastDecrypt, secret}
+}
+
 async function revealCard(socket, tableId, cardIndex) {
   const deckId = socket.gameConfigs[tableId].deckId
   const data = socket.activeGames[tableId]
   const g = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex))
   const gx = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex + 1))
-  const secret = BigInt(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
-  const inverse = invert(secret, bn254.CURVE.n)
-  const hx = bigIntegersToPoint(await deck.lastDecrypt(deckId, cardIndex))
-  const bases = (await deck.baseCards(deckId)).map(c => bigIntegersToPoint(c))
-  let openIndex = 0
-  for (const b of bases) {
-    if (hx.multiply(inverse).equals(bases[openIndex])) break
-    openIndex += 1
-  }
-  const h = bases[openIndex]
+  const {secret, card: h, lastDecrypt: hx, openIndex} =
+    await lookAtCard(socket, tableId, deckId, cardIndex)
   const s = randomScalar()
   const gs = g.multiply(s)
   const hs = h.multiply(s)
@@ -707,6 +739,21 @@ io.on('connection', async socket => {
       socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
         .endDeal(
+          tableId, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
+  socket.on('selectDealer', async(tableId) => {
+    try {
+      socket.emit('requestTransaction',
+        await game.connect(socket.account).populateTransaction
+        .selectDealer(
           tableId, {
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
