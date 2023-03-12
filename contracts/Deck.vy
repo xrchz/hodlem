@@ -297,5 +297,10 @@ def shuffleBase(_id: uint256, _idx: uint256) -> uint256[2]:
 
 @external
 @view
+def baseCards(_id: uint256) -> uint256[2][53]:
+  return self.decks[_id].shuffle[0]
+
+@external
+@view
 def openedCard(_id: uint256, _cardIdx: uint256) -> uint256:
   return self.decks[_id].cards[_cardIdx].opensAs

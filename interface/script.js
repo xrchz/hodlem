@@ -224,11 +224,19 @@ socket.on('activeGames', (configs, data) => {
       requests.forEach(([i, open]) => {
         const button = ul.appendChild(document.createElement('li')).appendChild(document.createElement('input'))
         button.type = 'button'
-        button.value = `Deal card ${i}`
+        button.value = `${open ? 'Open' : 'Deal'} card ${i}`
         button.addEventListener('click', _ => {
           socket.emit(open ? 'openCard' : 'decryptCard', config.id, i)
         })
       })
+      if (!requests.length) {
+        const button = li.appendChild(document.createElement('input'))
+        button.type = 'button'
+        button.value = 'Finish deal'
+        button.addEventListener('click', _ => {
+          socket.emit('endDeal', config.id)
+        })
+      }
     }
   })
 })

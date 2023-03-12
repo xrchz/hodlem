@@ -415,6 +415,37 @@ async function decryptCard(socket, tableId, cardIndex) {
   }
 }
 
+async function revealCard(socket, tableId, cardIndex) {
+  const deckId = socket.gameConfigs[tableId].deckId
+  const data = socket.activeGames[tableId]
+  const g = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex))
+  const gx = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex + 1))
+  const secret = BigInt(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
+  const inverse = invert(secret, bn254.CURVE.n)
+  const hx = bigIntegersToPoint(await deck.lastDecrypt(deckId, cardIndex))
+  const bases = (await deck.baseCards(deckId)).map(c => bigIntegersToPoint(c))
+  let openIndex = 0
+  for (const b of bases) {
+    if (hx.multiply(inverse).equals(bases[openIndex])) break
+    openIndex += 1
+  }
+  const h = bases[openIndex]
+  const s = randomScalar()
+  const gs = g.multiply(s)
+  const hs = h.multiply(s)
+  const toHash = new Uint8Array(6 * 64)
+  ;[g, h, gx, hx, gs, hs].forEach((p, i) => {
+    toHash.set(pointToBytes(p), i * 64)
+  })
+  const c = bytesToUint256(bn254.CURVE.hash(toHash))
+  const proof = {
+      gs: pointToUints(gs),
+      hs: pointToUints(hs),
+      scx: (s + c * secret) % bn254.CURVE.n
+    }
+  return [openIndex, proof]
+}
+
 async function refreshNetworkInfo(socket) {
   await refreshBalance(socket)
   await refreshFeeData(socket)
@@ -656,7 +687,30 @@ io.on('connection', async socket => {
 
   socket.on('openCard', async(tableId, cardIndex) => {
     try {
-          // TODO
+      const [openIndex, proof] = await revealCard(socket, tableId, cardIndex)
+      socket.emit('requestTransaction',
+        await room.connect(socket.account).populateTransaction
+        .revealCard(
+          tableId, socket.activeGames[tableId].seatIndex, cardIndex,
+          openIndex, proof, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
+  socket.on('endDeal', async(tableId) => {
+    try {
+      socket.emit('requestTransaction',
+        await room.connect(socket.account).populateTransaction
+        .endDeal(
+          tableId, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
