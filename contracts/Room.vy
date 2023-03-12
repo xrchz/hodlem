@@ -162,10 +162,8 @@ def ascending(_a: DynArray[uint256, 100]) -> bool:
 @external
 @payable
 def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
-  assert 1 < _config.startsWith, "invalid startsWith"
-  assert _config.startsWith <= MAX_SEATS, "invalid startsWith"
-  assert _config.untilLeft < _config.startsWith, "invalid untilLeft"
-  assert 0 < _config.untilLeft, "invalid untilLeft"
+  assert 1 < _config.startsWith and _config.startsWith <= MAX_SEATS, "invalid startsWith"
+  assert 0 < _config.untilLeft and _config.untilLeft < _config.startsWith, "invalid untilLeft"
   assert 0 < len(_config.structure) and self.ascending(_config.structure), "invalid structure"
   assert 0 < _config.buyIn, "invalid buyIn"
   assert _seatIndex < _config.startsWith, "invalid seatIndex"
@@ -206,9 +204,9 @@ def leaveTable(_tableId: uint256, _seatIndex: uint256):
 @external
 def startGame(_tableId: uint256):
   assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
+  numPlayers: uint256 = self.tables[_tableId].config.startsWith
   for seatIndex in range(MAX_SEATS):
-    if seatIndex == self.tables[_tableId].config.startsWith:
-      break
+    if seatIndex == numPlayers: break
     player: address = self.tables[_tableId].seats[seatIndex]
     assert player != empty(address), "not enough players"
     self.tables[_tableId].present |= shift(1, seatIndex)
@@ -216,7 +214,7 @@ def startGame(_tableId: uint256):
     self.nextLiveTable[player][0] = _tableId
     self.prevLiveTable[player][_tableId] = 0
     self.prevLiveTable[player][self.nextLiveTable[player][_tableId]] = _tableId
-  self.playerLeaveWaiting(_tableId, self.tables[_tableId].config.startsWith)
+  self.playerLeaveWaiting(_tableId, numPlayers)
   self.tables[_tableId].phase = Phase_PREP
   self.tables[_tableId].commitBlock = block.number
   log StartGame(_tableId)
