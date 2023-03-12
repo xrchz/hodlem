@@ -88,7 +88,6 @@ struct Table:
   nextPhase:   uint256              # phase to enter after deal
   present:     uint256              # whether each player contributes to the current shuffle
   shuffled:    uint256              # whether each player has verified their current shuffle
-  gameId:      uint256              # id of game in game contract
   commitBlock: uint256              # block from which new commitments were required
   deckIndex:   uint256              # index of next card in deck
   drawIndex:   uint256[26]          # player the card is drawn to
@@ -530,11 +529,6 @@ def authorised(_tableId: uint256, _phase: uint256,
   return (self.tables[_tableId].phase == _phase and
           (_address == empty(address) or
            _address == self.tables[_tableId].seats[_seatIndex]))
-
-@external
-@view
-def gameId(_tableId: uint256) -> uint256:
-  return self.tables[_tableId].gameId
 
 @internal
 @view
