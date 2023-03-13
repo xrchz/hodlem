@@ -218,6 +218,7 @@ async function refreshActiveGames(socket) {
     }
     if (data.phase === Phase_PLAY) {
       const gameData = await game.games(id)
+      delete data.selectDealer
       if (gameData.startBlock.isZero()) {
         data.cards = []
         for (const seatIndex of Array(numPlayers).keys()) {
@@ -230,9 +231,13 @@ async function refreshActiveGames(socket) {
         data.hand = []
         for (const idx of gameData.hands[data.seatIndex])
           data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
-        data.stack = gameData.stack.slice(numPlayers)
+        data.stack = gameData.stack.slice(0, numPlayers).map(s => ethers.utils.formatEther(s))
         data.bet = gameData.bet.slice(0, numPlayers).map(b => ethers.utils.formatEther(b))
+        data.betIndex = gameData.betIndex.toNumber()
         data.pot = gameData.pot.slice(0, numPlayers).flatMap(p => p.isZero() ? [] : [ethers.utils.formatEther(p)])
+        if (!data.pot.length) data.pot.push(0)
+        data.actionIndex = gameData.actionIndex.toNumber()
+        data.minRaise = ethers.utils.formatEther(gameData.minRaise)
         data.dealer = gameData.dealer.toNumber()
         data.postBlinds = data.board[0].isZero() && gameData.actionBlock.isZero()
       }
@@ -499,11 +504,11 @@ async function changeAccount(socket) {
 }
 
 function simpleTxn(socket, contract, func) {
-  return async tableId => {
+  return async (...args) => {
     try {
       socket.emit('requestTransaction',
         await contract.connect(socket.account).populateTransaction[func](
-          tableId, {
+          ...args, {
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
           }))
@@ -606,20 +611,7 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('leaveGame', async (tableId, seatIndex) => {
-    try {
-      socket.emit('requestTransaction',
-        await room.connect(socket.account).populateTransaction
-        .leaveTable(
-          tableId, seatIndex, {
-            maxFeePerGas: socket.feeData.maxFeePerGas,
-            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-          }))
-    }
-    catch (e) {
-      socket.emit('errorMsg', e.toString())
-    }
-  })
+  socket.on('leaveGame', simpleTxn(socket, room, 'leaveTable'))
 
   socket.on('joinGame', async (tableId, seatIndex) => {
     try {
@@ -734,4 +726,26 @@ io.on('connection', async socket => {
   socket.on('dealHoleCards', simpleTxn(socket, game, 'dealHoleCards'))
 
   socket.on('postBlinds', simpleTxn(socket, game, 'postBlinds'))
+
+  socket.on('fold', simpleTxn(socket, game, 'fold'))
+
+  socket.on('check', simpleTxn(socket, game, 'check'))
+
+  socket.on('call', simpleTxn(socket, game, 'callBet'))
+
+  socket.on('raise', async (tableId, seatIndex, raiseBy, bet) => {
+    try {
+      const raiseTo = ethers.utils.parseEther(bet).add(raiseBy)
+      socket.emit('requestTransaction',
+        await game.connect(socket.account).populateTransaction
+        .raiseBet(
+          tableId, seatIndex, raiseTo, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
 })

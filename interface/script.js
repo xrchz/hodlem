@@ -267,7 +267,10 @@ socket.on('activeGames', (configs, data) => {
       }
       else {
         ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
+        ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
         ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
+        const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
+        ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
         const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
         ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
         ul.appendChild(document.createElement('li')).innerText = `Pots: ${di.pot}`
@@ -279,7 +282,39 @@ socket.on('activeGames', (configs, data) => {
             socket.emit('postBlinds', config.id)
           })
         }
-        ul.appendChild(document.createElement('li')).innerText = 'TODO: make moves'
+        else if (di.actionIndex == di.seatIndex) {
+          const fold = li.appendChild(document.createElement('input'))
+          fold.type = 'button'
+          fold.value = 'Fold'
+          fold.addEventListener('click', _ => {
+            socket.emit('fold', config.id, di.seatIndex)
+          })
+          const check = li.appendChild(document.createElement('input'))
+          check.type = 'button'
+          check.value = 'Check'
+          check.addEventListener('click', _ => {
+            socket.emit('check', config.id, di.seatIndex)
+          })
+          const call = li.appendChild(document.createElement('input'))
+          call.type = 'button'
+          call.value = 'Call'
+          call.addEventListener('click', _ => {
+            socket.emit('call', config.id, di.seatIndex)
+          })
+          const amount = li.appendChild(document.createElement('input'))
+          amount.inputmode = 'decimal'
+          amount.pattern = "^([1-9]\d*)|(\d*\.\d+)$"
+          amount.value = di.minRaise
+          const bet = li.appendChild(document.createElement('input'))
+          bet.type = 'button'
+          bet.value = 'Raise'
+          bet.addEventListener('click', _ => {
+            if (amount.checkValidity())
+              socket.emit('raise', config.id, di.seatIndex, amount.value, di.bet[di.betIndex])
+            else
+              amount.reportValidity()
+          })
+        }
       }
     }
   })
