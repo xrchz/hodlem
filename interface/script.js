@@ -289,12 +289,6 @@ socket.on('activeGames', (configs, data) => {
           fold.addEventListener('click', _ => {
             socket.emit('fold', config.id, di.seatIndex)
           })
-          const check = li.appendChild(document.createElement('input'))
-          check.type = 'button'
-          check.value = 'Check'
-          check.addEventListener('click', _ => {
-            socket.emit('check', config.id, di.seatIndex)
-          })
           const call = li.appendChild(document.createElement('input'))
           call.type = 'button'
           call.value = 'Call'

@@ -729,8 +729,6 @@ io.on('connection', async socket => {
 
   socket.on('fold', simpleTxn(socket, game, 'fold'))
 
-  socket.on('check', simpleTxn(socket, game, 'check'))
-
   socket.on('call', simpleTxn(socket, game, 'callBet'))
 
   socket.on('raise', async (tableId, seatIndex, raiseBy, bet) => {

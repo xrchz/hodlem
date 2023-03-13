@@ -214,12 +214,6 @@ def fold(_tableId: uint256, _seatIndex: uint256):
   self.games[_tableId].liveUntil[_seatIndex] = 0
   self.afterAct(_tableId, _seatIndex)
 
-@external
-def check(_tableId: uint256, _seatIndex: uint256):
-  self.validateTurn(_tableId, _seatIndex)
-  assert self.games[_tableId].bet[self.games[_tableId].betIndex] == 0, "bet required"
-  self.afterAct(_tableId, _seatIndex)
-
 @internal
 def addSidePot(_numPlayers: uint256, _gameId: uint256, _nextPot: uint256):
   for seatIndex in range(MAX_SEATS):
@@ -234,11 +228,11 @@ def addSidePot(_numPlayers: uint256, _gameId: uint256, _nextPot: uint256):
 def callBet(_tableId: uint256, _seatIndex: uint256):
   self.validateTurn(_tableId, _seatIndex)
   bet: uint256 = self.games[_tableId].bet[self.games[_tableId].betIndex]
-  raiseBy: uint256 = bet - self.games[_tableId].bet[_seatIndex]
-  assert raiseBy > 0, "nothing to call"
-  self.placeBet(_tableId, _seatIndex, raiseBy)
-  if self.games[_tableId].stack[_seatIndex] < raiseBy: # calling all-in with side-pot
-    self.addSidePot(T.numPlayers(_tableId), _tableId, self.games[_tableId].liveUntil[_seatIndex])
+  raiseBy: uint256 = unsafe_sub(bet, self.games[_tableId].bet[_seatIndex])
+  if 0 < raiseBy:
+    self.placeBet(_tableId, _seatIndex, raiseBy)
+    if self.games[_tableId].stack[_seatIndex] < raiseBy: # calling all-in with side-pot
+      self.addSidePot(T.numPlayers(_tableId), _tableId, self.games[_tableId].liveUntil[_seatIndex])
   self.afterAct(_tableId, _seatIndex)
 
 @external
