@@ -362,13 +362,14 @@ def endShow(_tableId: uint256):
     elif self.playersLeft(numPlayers, _tableId) <= T.maxPlayers(_tableId):
       self.gameOver(numPlayers, _tableId)
     else:
-      self.nextRound(numPlayers, _tableId)
+      self.nextHand(numPlayers, _tableId)
   else:
     self.games[_tableId].actionBlock = block.number
 
 @internal
-def nextRound(_numPlayers: uint256, _tableId: uint256):
+def nextHand(_numPlayers: uint256, _tableId: uint256):
   self.removeEliminated(_numPlayers, _tableId)
+  self.games[_tableId].board = empty(uint256[5])
   T.reshuffle(_tableId)
   dealer: uint256 = self.games[_tableId].dealer
   self.games[_tableId].betIndex = dealer
@@ -478,7 +479,7 @@ def afterAct(_tableId: uint256, _seatIndex: uint256):
       if self.playersLeft(numPlayers, _tableId) <= T.maxPlayers(_tableId):
         self.gameOver(numPlayers, _tableId)
       else:
-        self.nextRound(numPlayers, _tableId)
+        self.nextHand(numPlayers, _tableId)
     elif self.games[_tableId].board[4] == empty(uint256):
       self.drawNextCard(_tableId)
     else:
