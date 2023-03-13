@@ -165,16 +165,20 @@ def selectDealer(_tableId: uint256):
   assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
   assert self.games[_tableId].startBlock == empty(uint256), "already started"
   numPlayers: uint256 = T.numPlayers(_tableId)
-  highestCard: uint256 = empty(uint256)
+  highestRank: uint256 = empty(uint256)
+  highestSuit: uint256 = empty(uint256)
   highestCardSeatIndex: uint256 = empty(uint256)
   for seatIndex in range(MAX_PLAYERS):
     if seatIndex == numPlayers:
       break
     self.games[_tableId].liveUntil[seatIndex] = 1
     self.games[_tableId].stack[seatIndex] = T.buyIn(_tableId)
-    card: uint256 = T.cardAt(_tableId, seatIndex)
-    if highestCard < card:
-      highestCard = card
+    card: uint256 = unsafe_sub(T.cardAt(_tableId, seatIndex), 1)
+    rank: uint256 = unsafe_add(card % 13, 1)
+    suit: uint256 = unsafe_div(card, 13)
+    if highestRank < rank or (highestRank == rank and highestSuit < suit):
+      highestRank = rank
+      highestSuit = suit
       highestCardSeatIndex = seatIndex
   self.games[_tableId].startBlock = block.number
   T.reshuffle(_tableId)
