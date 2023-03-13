@@ -197,10 +197,9 @@ def postBlinds(_tableId: uint256):
   seatIndex = self.roundNextActor(numPlayers, _tableId, seatIndex)
   blind = unsafe_add(blind, blind)
   self.placeBet(_tableId, seatIndex, blind)
-  seatIndex = self.roundNextActor(numPlayers, _tableId, seatIndex)
   self.games[_tableId].betIndex = seatIndex
   self.games[_tableId].minRaise = blind
-  self.games[_tableId].actionIndex = seatIndex
+  self.games[_tableId].actionIndex = self.roundNextActor(numPlayers, _tableId, seatIndex)
   self.games[_tableId].actionBlock = block.number
 
 @internal
