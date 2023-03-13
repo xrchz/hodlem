@@ -253,10 +253,8 @@ def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
   self.afterAct(_tableId, _seatIndex)
 
 @external
-def dealNextRound(_tableId: uint256):
-  assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
-  assert self.games[_tableId].board[2] != empty(uint256), "board empty"
-  assert self.games[_tableId].actionBlock == empty(uint256), "already betting"
+def endDeal(_tableId: uint256):
+  T.endDeal(_tableId)
   # fill the board with the revealedCards
   boardIndex: uint256 = 5
   cardIndex: uint256 = T.deckIndex(_tableId)
@@ -269,6 +267,12 @@ def dealNextRound(_tableId: uint256):
       self.games[_tableId].board[boardIndex] = T.cardAt(_tableId, cardIndex)
     else:
       break
+
+@external
+def dealNextRound(_tableId: uint256):
+  assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
+  assert self.games[_tableId].board[2] != empty(uint256), "board empty"
+  assert self.games[_tableId].actionBlock == empty(uint256), "already betting"
   self.games[_tableId].betIndex = self.games[_tableId].dealer
   self.games[_tableId].actionIndex = self.roundNextActor(
     T.numPlayers(_tableId), _tableId, self.games[_tableId].dealer)

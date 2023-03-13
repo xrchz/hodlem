@@ -449,6 +449,7 @@ def checkRevelations(_tableId: uint256) -> bool:
 
 @external
 def endDeal(_tableId: uint256):
+  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   self.validatePhase(_tableId, Phase_DEAL)
   assert self.checkRevelations(_tableId), "revelations missing"
   self.tables[_tableId].phase = self.tables[_tableId].nextPhase

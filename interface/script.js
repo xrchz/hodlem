@@ -268,12 +268,14 @@ socket.on('activeGames', (configs, data) => {
       else {
         ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
         ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
+        ul.appendChild(document.createElement('li')).innerText = `Board: ${di.board.map(card => cardChar(card - 1)).join()}`
         ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
         const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
         ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
         const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
         ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
-        ul.appendChild(document.createElement('li')).innerText = `Pots: ${di.pot}`
+        ul.appendChild(document.createElement('li')).innerText = `To call: ${di.bet[di.betIndex]}`
+        ul.appendChild(document.createElement('li')).innerText = `Pots: ${JSON.stringify(di.pot)}`
         if (di.postBlinds) {
           const button = li.appendChild(document.createElement('input'))
           button.type = 'button'
@@ -297,14 +299,15 @@ socket.on('activeGames', (configs, data) => {
           })
           const amount = li.appendChild(document.createElement('input'))
           amount.inputmode = 'decimal'
-          amount.pattern = "^([1-9]\d*)|(\d*\.\d+)$"
+          amount.pattern = "^([1-9]\\d*)|(\\d*\\.\\d+)$"
           amount.value = di.minRaise
+          amount.classList.add('amount', 'justifyRight')
           const bet = li.appendChild(document.createElement('input'))
           bet.type = 'button'
           bet.value = 'Raise'
           bet.addEventListener('click', _ => {
             if (amount.checkValidity())
-              socket.emit('raise', config.id, di.seatIndex, amount.value, di.bet[di.betIndex])
+              socket.emit('raise', config.id, di.seatIndex, amount.value, di.bet[di.seatIndex])
             else
               amount.reportValidity()
           })

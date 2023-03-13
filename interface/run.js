@@ -227,7 +227,7 @@ async function refreshActiveGames(socket) {
         data.selectDealer = true
       }
       else {
-        data.board = gameData.board
+        data.board = gameData.board.flatMap(i => i.isZero() ? [] : [i.toNumber()])
         data.hand = []
         for (const idx of gameData.hands[data.seatIndex])
           data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
@@ -239,7 +239,7 @@ async function refreshActiveGames(socket) {
         data.actionIndex = gameData.actionIndex.toNumber()
         data.minRaise = ethers.utils.formatEther(gameData.minRaise)
         data.dealer = gameData.dealer.toNumber()
-        data.postBlinds = data.board[0].isZero() && gameData.actionBlock.isZero()
+        data.postBlinds = gameData.board[0].isZero() && gameData.actionBlock.isZero()
       }
     }
   }
@@ -717,7 +717,7 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('endDeal', simpleTxn(socket, room, 'endDeal'))
+  socket.on('endDeal', simpleTxn(socket, game, 'endDeal'))
 
   socket.on('dealHighCard', simpleTxn(socket, game, 'dealHighCard'))
 
@@ -733,7 +733,7 @@ io.on('connection', async socket => {
 
   socket.on('raise', async (tableId, seatIndex, raiseBy, bet) => {
     try {
-      const raiseTo = ethers.utils.parseEther(bet).add(raiseBy)
+      const raiseTo = ethers.utils.parseEther(bet).add(ethers.utils.parseEther(raiseBy))
       socket.emit('requestTransaction',
         await game.connect(socket.account).populateTransaction
         .raiseBet(
