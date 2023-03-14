@@ -413,6 +413,8 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
       break
   self.tables[_tableId].commitBlock = block.number
 
+# TODO: decrypt/reveal multiple cards at a time
+
 @external
 def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
                 _card: uint256[2], _proof: Proof):
