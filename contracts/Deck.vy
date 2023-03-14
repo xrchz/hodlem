@@ -19,7 +19,7 @@ GROUP_ORDER: constant(uint256) = 21888242871839275222246405745257275088548364400
 # TODO: the MAX_SECURITY is rather small because of code size
 #       costs https://github.com/vyperlang/vyper/issues/2656
 SIZE: constant(uint256) = 52
-MAX_PLAYERS: constant(uint256) = 1000 # to distinguish from SIZE when inlining
+MAX_PLAYERS: constant(uint256) = 127
 MAX_SECURITY: constant(uint256) = 63
 
 struct Proof:
@@ -39,7 +39,7 @@ struct CP:
 
 struct DrawCard:
   # successive decryptions
-  c: DynArray[uint256[2], 1000]
+  c: DynArray[uint256[2], 127]
   # 1 + index of player the card is initially drawn to (i.e. they skip decryption)
   # note: a card can only be drawn to a single player
   drawnTo: uint256
@@ -50,13 +50,13 @@ struct Deck:
   # authorised address for drawing cards and reshuffling
   dealer: address
   # authorised address for each player
-  addrs: DynArray[address, 1000]
+  addrs: DynArray[address, 127]
   # shuffle[0] is the unencrypted cards (including base card at index 0)
   # shuffle[j+1] is the shuffled encrypted cards from player index j
-  shuffle: DynArray[uint256[2][53], 1001] # 1000 + 1] <- another Vyper bug with importing
-  challengeReq: DynArray[uint256, 1000]
-  challengeRes: DynArray[bytes32[2], 1000]
-  challengeRnd: DynArray[uint256, 1000]
+  shuffle: DynArray[uint256[2][53], 128] # 127 + 1] <- another Vyper bug with importing
+  challengeReq: DynArray[uint256, 127]
+  challengeRes: DynArray[bytes32[2], 127]
+  challengeRnd: DynArray[uint256, 127]
   # for decrypting shuffled cards
   # note: cards[i] corresponds to shuffle[_][i+1]
   cards: DrawCard[53]
