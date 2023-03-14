@@ -124,6 +124,7 @@ struct Game:
   minRaise:    uint256            # size of the minimum raise
   liveUntil:   uint256[MAX_SEATS] # index of first pot player is not live in
   pot:         uint256[MAX_SEATS] # pot and side pots
+  numInHand:   uint256            # number of live players in this hand
   potIndex:    uint256            # index of pot being decided in showdown
   actionIndex: uint256            # seat index of currently active player
   actionBlock: uint256            # block from which action was on the active player
@@ -182,6 +183,7 @@ def selectDealer(_tableId: uint256):
       highestRank = rank
       highestSuit = suit
       highestCardSeatIndex = seatIndex
+  self.games[_tableId].numInHand = numPlayers
   self.games[_tableId].startBlock = block.number
   T.reshuffle(_tableId)
   self.games[_tableId].dealer = highestCardSeatIndex
@@ -212,10 +214,17 @@ def validateTurn(_tableId: uint256, _seatIndex: uint256, _phase: uint256 = Phase
   assert self.games[_tableId].actionBlock != empty(uint256), "not active"
   assert self.games[_tableId].actionIndex == _seatIndex, "wrong turn"
 
+@internal
+def removeFromPots(_tableId: uint256, _seatIndex: uint256):
+  self.games[_tableId].liveUntil[_seatIndex] = 0
+  assert self.games[_tableId].numInHand != 0, "TODO: internal consistency check"
+  self.games[_tableId].numInHand = unsafe_sub(
+    self.games[_tableId].numInHand, 1)
+
 @external
 def fold(_tableId: uint256, _seatIndex: uint256):
   self.validateTurn(_tableId, _seatIndex)
-  self.games[_tableId].liveUntil[_seatIndex] = 0
+  self.removeFromPots(_tableId, _seatIndex)
   self.afterAct(_tableId, _seatIndex)
 
 @internal
@@ -285,7 +294,7 @@ def actTimeout(_tableId: uint256):
   assert self.games[_tableId].actionBlock != empty(uint256), "not active"
   assert block.number > (self.games[_tableId].actionBlock +
                          T.actBlocks(_tableId)), "deadline not passed"
-  self.games[_tableId].liveUntil[self.games[_tableId].actionIndex] = 0
+  self.removeFromPots(_tableId, self.games[_tableId].actionIndex)
   self.afterAct(_tableId, self.games[_tableId].actionIndex)
 
 @external
@@ -298,7 +307,7 @@ def showCards(_tableId: uint256, _seatIndex: uint256):
 @external
 def foldCards(_tableId: uint256, _seatIndex: uint256):
   self.validateTurn(_tableId, _seatIndex, Phase_SHOW)
-  self.games[_tableId].liveUntil[_seatIndex] = 0
+  self.removeFromPots(_tableId, _seatIndex)
 
 @external
 def endShow(_tableId: uint256):
@@ -319,11 +328,14 @@ def endShow(_tableId: uint256):
                         self.games[_tableId].board[4],
                         0, 0]
     winners: DynArray[uint256, MAX_SEATS] = []
+    potIndex: uint256 = self.games[_tableId].potIndex
     for contestantIndex in range(MAX_SEATS):
       if contestantIndex == numPlayers:
         break
-      if self.games[_tableId].liveUntil[contestantIndex] <= self.games[_tableId].potIndex:
+      if self.games[_tableId].liveUntil[contestantIndex] <= potIndex:
         continue
+      assert self.games[_tableId].liveUntil[contestantIndex] == unsafe_add(potIndex, 1), "TODO: internal consistency check"
+      self.games[_tableId].liveUntil[contestantIndex] = potIndex
       hand[5] = T.cardAt(_tableId, self.games[_tableId].hands[contestantIndex][0])
       hand[6] = T.cardAt(_tableId, self.games[_tableId].hands[contestantIndex][1])
       handRank: uint256 = self.bestHandRank(hand)
@@ -331,13 +343,11 @@ def endShow(_tableId: uint256):
         winners = [contestantIndex]
       elif bestHandRank == handRank:
         winners.append(contestantIndex)
-    potIndex: uint256 = self.games[_tableId].potIndex
     share: uint256 = unsafe_div(self.games[_tableId].pot[potIndex], len(winners))
     for winnerIndex in winners:
       self.games[_tableId].pot[potIndex] = unsafe_sub(self.games[_tableId].pot[potIndex], share)
       self.games[_tableId].stack[winnerIndex] = unsafe_add(self.games[_tableId].stack[winnerIndex], share)
-      self.games[_tableId].liveUntil[winnerIndex] = unsafe_sub(self.games[_tableId].liveUntil[winnerIndex], 1)
-    # odd chip(s) to be distributed according to overall card rank
+    # odd chip(s) distributed according to overall card rank
     if self.games[_tableId].pot[potIndex] != 0:
       for negCard in range(52):
         card: uint256 = unsafe_sub(52, negCard)
@@ -365,7 +375,15 @@ def endShow(_tableId: uint256):
 
 @internal
 def nextHand(_numPlayers: uint256, _tableId: uint256):
-  self.removeEliminated(_numPlayers, _tableId)
+  self.games[_tableId].numInHand = 0
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == _numPlayers:
+      break
+    if self.games[_tableId].stack[seatIndex] == empty(uint256):
+      T.setPresence(_tableId, seatIndex, False)
+    else:
+      self.games[_tableId].numInHand = unsafe_add(
+        self.games[_tableId].numInHand, 1)
   self.games[_tableId].board = empty(uint256[5])
   T.reshuffle(_tableId)
   dealer: uint256 = self.games[_tableId].dealer
@@ -420,14 +438,6 @@ def settleUncontested(_numPlayers: uint256, _gameId: uint256) -> uint256:
   return numContested
 
 @internal
-def removeEliminated(_numPlayers: uint256, _tableId: uint256):
-  for seatIndex in range(MAX_SEATS):
-    if seatIndex == _numPlayers:
-      break
-    if self.games[_tableId].stack[seatIndex] == empty(uint256):
-      T.setPresence(_tableId, seatIndex, False)
-
-@internal
 @view
 def playersLeft(_numPlayers: uint256, _gameId: uint256) -> uint256:
   playersLeft: uint256 = 0
@@ -480,7 +490,7 @@ def afterAct(_tableId: uint256, _seatIndex: uint256):
   numPlayers: uint256 = T.numPlayers(_tableId)
   stopIndex: uint256 = self.games[_tableId].stopIndex
   self.games[_tableId].actionIndex = self.roundNextActor(numPlayers, _tableId, _seatIndex, stopIndex)
-  if self.games[_tableId].actionIndex == stopIndex:
+  if self.games[_tableId].actionIndex == stopIndex or self.games[_tableId].numInHand == 1:
     # nobody is left to act in this round
     # move bets to pots
     self.collectPots(numPlayers, _tableId)
