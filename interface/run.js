@@ -31,15 +31,15 @@ const network = await provider.getNetwork()
 console.log(`Connected to ${JSON.stringify(network)}`)
 
 const game = new ethers.Contract(process.env.GAME,
-  JSON.parse(fs.readFileSync(process.env.GAME_ABI || '../build/interfaces/Game.json', 'utf8')).abi,
+  JSON.parse(fs.readFileSync(process.env.GAME_ABI || '../build/contracts/Game.json', 'utf8')).abi,
   provider)
 console.log(`Game is ${game.address}`)
 const room = new ethers.Contract(process.env.ROOM,
-  JSON.parse(fs.readFileSync(process.env.ROOM_ABI || '../build/interfaces/Room.json', 'utf8')).abi,
+  JSON.parse(fs.readFileSync(process.env.ROOM_ABI || '../build/contracts/Room.json', 'utf8')).abi,
   provider)
 console.log(`Room is ${room.address}`)
 const deck = new ethers.Contract(process.env.DECK,
-  JSON.parse(fs.readFileSync(process.env.DECK_ABI || '../build/interfaces/Deck.json', 'utf8')).abi,
+  JSON.parse(fs.readFileSync(process.env.DECK_ABI || '../build/contracts/Deck.json', 'utf8')).abi,
   provider)
 console.log(`Deck is ${deck.address}`)
 
