@@ -274,7 +274,7 @@ socket.on('activeGames', (configs, data) => {
         ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
         const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
         ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
-        ul.appendChild(document.createElement('li')).innerText = `To call: ${di.bet[di.betIndex]}`
+        ul.appendChild(document.createElement('li')).innerText = `Bet: ${di.bet[di.betIndex]}`
         ul.appendChild(document.createElement('li')).innerText = `Pots: ${JSON.stringify(di.pot)}`
         if (di.postBlinds) {
           const button = li.appendChild(document.createElement('input'))
