@@ -27,7 +27,8 @@ interface DeckManager:
     def newDeck(_players: uint256) -> uint256: nonpayable
     def changeDealer(_id: uint256, _newAddress: address): nonpayable
     def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
-    def submitPrep(_id: uint256, _playerIdx: uint256, _prep: CP[53]): nonpayable
+    def submitPrep(_id: uint256, _playerIdx: uint256, _hash: bytes32): nonpayable
+    def verifyPrep(_id: uint256, _playerIdx: uint256, _prep: CP[53]): nonpayable
     def emptyProof(card: uint256[2]) -> Proof: pure
     def finishPrep(_id: uint256): nonpayable
     def resetShuffle(_id: uint256): nonpayable
@@ -40,12 +41,16 @@ interface DeckManager:
     def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2], _proof: Proof): nonpayable
     def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _openIdx: uint256, _proof: Proof): nonpayable
     def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool: view
+    def hasVerifiedPrep(_id: uint256, _playerIdx: uint256) -> bool: view
+    def prepped(_id: uint256) -> bool: view
     def shuffleCount(_id: uint256) -> uint256: view
     def lastShuffle(_id: uint256) -> uint256[2][53]: view
     def challengeActive(_id: uint256, _playerIdx: uint256) -> bool: view
     def challengeRnd(_id: uint256, _playerIdx: uint256) -> uint256: view
     def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256: view
     def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]: view
+    def shuffleBase(_id: uint256, _idx: uint256) -> uint256[2]: view
+    def baseCards(_id: uint256) -> uint256[2][53]: view
     def openedCard(_id: uint256, _cardIdx: uint256) -> uint256: view
 
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
@@ -285,13 +290,19 @@ def failChallenge(_tableId: uint256, _challIndex: uint256):
 # deck setup
 
 @external
-def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: CP[53]):
+def submitPrep(_tableId: uint256, _seatIndex: uint256, _hash: bytes32):
   self.validatePhase(_tableId, Phase_PREP)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
-  self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _deckPrep)
+  self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _hash)
 
 @external
-def finishDeckPrep(_tableId: uint256):
+def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]):
+  self.validatePhase(_tableId, Phase_PREP)
+  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+  self.tables[_tableId].deck.verifyPrep(self.tables[_tableId].deckId, _seatIndex, _prep)
+
+@external
+def finishPrep(_tableId: uint256):
   self.validatePhase(_tableId, Phase_PREP)
   self.tables[_tableId].deck.finishPrep(self.tables[_tableId].deckId)
   for seatIndex in range(MAX_SEATS):

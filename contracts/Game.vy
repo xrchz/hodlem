@@ -69,8 +69,9 @@ interface RoomManager:
     def verificationTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
     def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
     def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
-    def prepareDeck(_tableId: uint256, _seatIndex: uint256, _deckPrep: CP[53]): nonpayable
-    def finishDeckPrep(_tableId: uint256): nonpayable
+    def submitPrep(_tableId: uint256, _seatIndex: uint256, _hash: bytes32): nonpayable
+    def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]): nonpayable
+    def finishPrep(_tableId: uint256): nonpayable
     def submitShuffle(_tableId: uint256, _seatIndex: uint256, _shuffle: uint256[2][53], _hash: bytes32) -> uint256: nonpayable
     def submitVerif(_tableId: uint256, _seatIndex: uint256, _commitments: DynArray[uint256[2][53], 256],
                     _scalars: DynArray[uint256, 256], _permutations: DynArray[uint256[53], 256]): nonpayable

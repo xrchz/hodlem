@@ -60,8 +60,6 @@ struct Deck:
   # for decrypting shuffled cards
   # note: cards[i] corresponds to shuffle[_][i+1]
   cards: DrawCard[53]
-  # bit array on whether each player has submitted their deck prep
-  prepped: uint256
 
 decks: HashMap[uint256, Deck]
 nextId: uint256
@@ -75,6 +73,7 @@ def newDeck(_players: uint256) -> uint256:
     if i == _players:
       break
     self.decks[id].addrs.append(msg.sender)
+    self.decks[id].challengeRes.append(empty(bytes32[2]))
   self.decks[id].shuffle.append(empty(uint256[2][SIZE+1]))
   self.nextId = unsafe_add(id, 1)
   return id
@@ -90,74 +89,61 @@ def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address):
   self.decks[_id].addrs[_playerIdx] = _newAddress
 
 @external
-def submitPrep(_id: uint256, _playerIdx: uint256, _prep: CP[53]):
+def submitPrep(_id: uint256, _playerIdx: uint256, _hash: bytes32):
   assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
+  assert len(self.decks[_id].challengeRnd) == 0, "already finished"
   assert not self._hasSubmittedPrep(_id, _playerIdx), "already prepared"
+  assert _hash != empty(bytes32), "invalid commitment"
+  self.decks[_id].challengeRes[_playerIdx][0] = _hash
+
+@external
+def finishSubmit(_id: uint256):
+  numPlayers: uint256 = len(self.decks[_id].addrs)
+  assert (len(self.decks[_id].challengeRnd) == 0 and
+          self.decks[_id].cards[0].drawnTo == 0), "already finished"
+  for playerIdx in range(MAX_PLAYERS):
+    if playerIdx == numPlayers: break
+    assert self._hasSubmittedPrep(_id, playerIdx), "not submitted"
+  self.decks[_id].cards[0].drawnTo = 1
+
+@external
+def verifyPrep(_id: uint256, _playerIdx: uint256, _prep: CP[53]):
+  assert self.decks[_id].addrs[_playerIdx] == msg.sender, "unauthorised"
+  assert self.decks[_id].cards[0].drawnTo == 1, "not submitted"
+  assert len(self.decks[_id].challengeRnd) == 0, "already finished"
+  assert not self._hasVerifiedPrep(_id, _playerIdx), "already verified"
+  hash: bytes32 = empty(bytes32)
+  for cardIdx in range(SIZE+1):
+    hash = sha256(concat(hash,
+             convert(_prep[cardIdx].g[0], bytes32),
+             convert(_prep[cardIdx].g[1], bytes32),
+             convert(_prep[cardIdx].gx[0], bytes32),
+             convert(_prep[cardIdx].gx[1], bytes32),
+             convert(_prep[cardIdx].h[0], bytes32),
+             convert(_prep[cardIdx].h[1], bytes32)))
+  assert hash == self.decks[_id].challengeRes[_playerIdx][0], "invalid commitment"
+  self.decks[_id].challengeRes[_playerIdx][1] = convert(1, bytes32)
   for cardIdx in range(SIZE+1):
     assert self.chaumPederson(_prep[cardIdx]), "invalid prep"
     self.decks[_id].shuffle[0][cardIdx] = ecadd(
       self.decks[_id].shuffle[0][cardIdx], _prep[cardIdx].hx)
-  self.decks[_id].prepped ^= shift(1, _playerIdx)
-
-@internal
-@pure
-def pointEq(a: uint256[2], b: uint256[2]) -> bool:
-  return a[0] == b[0] and a[1] == b[1]
-
-@internal
-@pure
-def hash(g: uint256[2], h: uint256[2],
-         gx: uint256[2], hx: uint256[2],
-         gs: uint256[2], hs: uint256[2]) -> uint256:
-  return convert(
-    sha256(concat(
-      convert(g[0], bytes32), convert(g[1], bytes32),
-      convert(h[0], bytes32), convert(h[1], bytes32),
-      convert(gx[0], bytes32), convert(gx[1], bytes32),
-      convert(hx[0], bytes32), convert(hx[1], bytes32),
-      convert(gs[0], bytes32), convert(gs[1], bytes32),
-      convert(hs[0], bytes32), convert(hs[1], bytes32))),
-    uint256) % GROUP_ORDER
-
-@external
-@pure
-def emptyProof(card: uint256[2]) -> Proof:
-  return Proof({
-    gs: empty(uint256[2]),
-    hs: empty(uint256[2]),
-    scx: self.hash(card, card, card, card, empty(uint256[2]), empty(uint256[2]))})
-
-@internal
-@pure
-def cp1(p: uint256[2], px: uint256[2], ps: uint256[2], c: uint256, scx: uint256) -> bool:
-  return self.pointEq(ecadd(ps, ecmul(px, c)), ecmul(p, scx))
-
-@internal
-@pure
-def chaumPederson(cp: CP) -> bool:
-  # unlike Chaum & Pederson we also include g and gx in the hash
-  # so we are hashing the statement as well as the commitment
-  # (see https://ia.cr/2016/771)
-  c: uint256 = self.hash(cp.g, cp.h, cp.gx, cp.hx, cp.p.gs, cp.p.hs)
-  return (self.cp1(cp.g, cp.gx, cp.p.gs, c, cp.p.scx) and
-          self.cp1(cp.h, cp.hx, cp.p.hs, c, cp.p.scx))
 
 @external
 def finishPrep(_id: uint256):
-  n: uint256 = len(self.decks[_id].addrs)
-  assert not self._hasSubmittedPrep(_id, n), "already finished"
+  numPlayers: uint256 = len(self.decks[_id].addrs)
+  assert self.decks[_id].cards[0].drawnTo == 1, "not submitted"
+  assert len(self.decks[_id].challengeRnd) == 0, "already finished"
   for playerIdx in range(MAX_PLAYERS):
-    if playerIdx == n: break
-    assert self._hasSubmittedPrep(_id, playerIdx), "not finished"
-  self.decks[_id].prepped = shift(1, n)
+    if playerIdx == numPlayers: break
+    assert self._hasVerifiedPrep(_id, playerIdx), "not finished"
+    self.decks[_id].challengeRnd.append(0)
+  self.decks[_id].cards[0].drawnTo = empty(uint256)
 
 @external
 def resetShuffle(_id: uint256):
   assert self.decks[_id].dealer == msg.sender, "unauthorised"
   self.decks[_id].shuffle = [self.decks[_id].shuffle[0]]
   self.decks[_id].challengeReq = []
-  self.decks[_id].challengeRes = []
-  self.decks[_id].challengeRnd = []
   self.decks[_id].cards = empty(DrawCard[SIZE+1])
 
 @external
@@ -166,8 +152,7 @@ def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: uint256[2][53]):
   assert len(self.decks[_id].shuffle) == unsafe_add(_playerIdx, 1), "wrong player"
   self.decks[_id].shuffle.append(_shuffle)
   self.decks[_id].challengeReq.append(0)
-  self.decks[_id].challengeRnd.append(empty(uint256))
-  self.decks[_id].challengeRes.append(empty(bytes32[2]))
+  self.decks[_id].challengeRes[_playerIdx] = empty(bytes32[2])
 
 @external
 def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256):
@@ -197,7 +182,7 @@ def defuseNextChallenge(_id: uint256, _playerIdx: uint256,
     hash = sha256(concat(hash, convert(p[0], bytes32), convert(p[1], bytes32)))
   self.decks[_id].challengeRes[_playerIdx][1] = hash
   self.decks[_id].challengeReq[_playerIdx] = unsafe_sub(k, 1)
-  if self.decks[_id].challengeReq[_playerIdx] == empty(uint256):
+  if self.decks[_id].challengeReq[_playerIdx] == 0:
     assert self.decks[_id].challengeRes[_playerIdx][0] == hash, "invalid commitments"
   bits: uint256 = self.decks[_id].challengeRnd[_playerIdx]
   self.decks[_id].challengeRnd[_playerIdx] = shift(bits, -1)
@@ -250,14 +235,72 @@ def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256,
   self.decks[_id].cards[_cardIdx].opensAs = unsafe_add(_openIdx, 1)
 
 @internal
+@pure
+def pointEq(a: uint256[2], b: uint256[2]) -> bool:
+  return a[0] == b[0] and a[1] == b[1]
+
+@internal
+@pure
+def hash(g: uint256[2], h: uint256[2],
+         gx: uint256[2], hx: uint256[2],
+         gs: uint256[2], hs: uint256[2]) -> uint256:
+  return convert(
+    sha256(concat(
+      convert(g[0], bytes32), convert(g[1], bytes32),
+      convert(h[0], bytes32), convert(h[1], bytes32),
+      convert(gx[0], bytes32), convert(gx[1], bytes32),
+      convert(hx[0], bytes32), convert(hx[1], bytes32),
+      convert(gs[0], bytes32), convert(gs[1], bytes32),
+      convert(hs[0], bytes32), convert(hs[1], bytes32))),
+    uint256) % GROUP_ORDER
+
+@external
+@pure
+def emptyProof(card: uint256[2]) -> Proof:
+  return Proof({
+    gs: empty(uint256[2]),
+    hs: empty(uint256[2]),
+    scx: self.hash(card, card, card, card, empty(uint256[2]), empty(uint256[2]))})
+
+@internal
+@pure
+def cp1(p: uint256[2], px: uint256[2], ps: uint256[2], c: uint256, scx: uint256) -> bool:
+  return self.pointEq(ecadd(ps, ecmul(px, c)), ecmul(p, scx))
+
+@internal
+@pure
+def chaumPederson(cp: CP) -> bool:
+  # unlike Chaum & Pederson we also include g and gx in the hash
+  # so we are hashing the statement as well as the commitment
+  # (see https://ia.cr/2016/771)
+  c: uint256 = self.hash(cp.g, cp.h, cp.gx, cp.hx, cp.p.gs, cp.p.hs)
+  return (self.cp1(cp.g, cp.gx, cp.p.gs, c, cp.p.scx) and
+          self.cp1(cp.h, cp.hx, cp.p.hs, c, cp.p.scx))
+
+@internal
 @view
 def _hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool:
-  return convert(self.decks[_id].prepped & shift(1, _playerIdx), bool)
+  return self.decks[_id].challengeRes[_playerIdx][0] != empty(bytes32)
+
+@internal
+@view
+def _hasVerifiedPrep(_id: uint256, _playerIdx: uint256) -> bool:
+  return self.decks[_id].challengeRes[_playerIdx][1] != empty(bytes32)
 
 @external
 @view
 def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool:
   return self._hasSubmittedPrep(_id, _playerIdx)
+
+@external
+@view
+def hasVerifiedPrep(_id: uint256, _playerIdx: uint256) -> bool:
+  return self._hasVerifiedPrep(_id, _playerIdx)
+
+@external
+@view
+def allSubmittedPrep(_id: uint256) -> bool:
+  return self.decks[_id].cards[0].drawnTo == 1
 
 @external
 @view

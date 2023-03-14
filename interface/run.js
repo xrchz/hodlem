@@ -172,9 +172,14 @@ async function refreshActiveGames(socket) {
     ;[data.phase, data.commitBlock] = (await room.phaseCommit(id)).map(i => i.toNumber())
     delete data.toDeal
     if (data.phase === Phase_PREP) {
+      delete data.reveal
       data.waitingOn = []
+      if (await deck.allSubmittedPrep(deckId)) {
+        data.reveal = true
+      }
+      const func = data.reveal ? 'hasVerifiedPrep' : 'hasSubmittedPrep'
       for (const seatIndex of Array(numPlayers).keys()) {
-        if (!(await deck.hasSubmittedPrep(deckId, seatIndex))) {
+        if (!(await deck[func](deckId, seatIndex))) {
           data.waitingOn.push(seatIndex)
         }
       }
@@ -292,20 +297,54 @@ function pointToBytes(p) {
   return r
 }
 
-function prepareDeck() {
-  const cards = []
+function bytesToPoint(b) {
+  return bn254.ProjectivePoint.fromAffine({
+    x: bytesToUint256(b.slice(0, 32)),
+    y: bytesToUint256(b.slice(32))
+  })
+}
+
+async function prepareDeck(socket, id) {
+  const key = `/${socket.account.address}/${id}/prep`
+  const hash = new Uint8Array(32 + 3 * 64)
   for (const i of Array(53).keys()) {
     const g = randomPoint()
-    const h = randomPoint()
+    const gb = pointToBytes(g)
+    await db.push(`${key}/${i}/g`, gb.join())
     const x = randomScalar()
+    await db.push(`${key}/${i}/x`, x.toString())
     const gx = g.multiply(x)
+    const gxb = pointToBytes(gx)
+    await db.push(`${key}/${i}/gx`, gxb.join())
+    const h = randomPoint()
+    const hb = pointToBytes(h)
+    await db.push(`${key}/${i}/h`, hb.join())
+    hash.set(gb, 32)
+    hash.set(gxb, 32 + 64)
+    hash.set(hb, 32 + 128)
+    hash.set(bn254.CURVE.hash(hash))
+  }
+  return hash.slice(0, 32)
+}
+
+async function revealPrep(socket, id) {
+  const key = `/${socket.account.address}/${id}/prep`
+  const cards = []
+  for (const i of Array(53).keys()) {
+    const gb = Uint8Array.from((await db.getData(`${key}/${i}/g`)).split(','))
+    const g = bytesToPoint(gb)
+    const x = BigInt(await db.getData(`${key}/${i}/x`))
+    const gxb = Uint8Array.from((await db.getData(`${key}/${i}/gx`)).split(','))
+    const gx = bytesToPoint(gxb)
+    const hb = Uint8Array.from((await db.getData(`${key}/${i}/h`)).split(','))
+    const h = bytesToPoint(hb)
     const hx = h.multiply(x)
     const s = randomScalar()
     const gs = g.multiply(s)
     const hs = h.multiply(s)
     const toHash = new Uint8Array(6 * 64)
-    ;[g, h, gx, hx, gs, hs].forEach((p, i) => {
-      toHash.set(pointToBytes(p), i * 64)
+    ;[gb, hb, gxb, pointToBytes(hx), pointToBytes(gs), pointToBytes(hs)].forEach((p, i) => {
+      toHash.set(p, i * 64)
     })
     const c = bytesToUint256(bn254.CURVE.hash(toHash))
     cards.push({
@@ -631,13 +670,13 @@ io.on('connection', async socket => {
 
   socket.on('startGame', simpleTxn(socket, room, 'startGame'))
 
-  socket.on('submitPrep', async tableId => {
+  socket.on('submitPrep', async (tableId, seatIndex) => {
     try {
-      const deckPrep = prepareDeck()
+      const hash = await prepareDeck(socket, tableId)
       socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
-        .prepareDeck(
-          tableId, socket.activeGames[tableId].seatIndex, deckPrep, {
+        .submitPrep(
+          tableId, seatIndex, hash, {
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
           }))
@@ -647,7 +686,25 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('finishPrep', simpleTxn(socket, room, 'finishDeckPrep'))
+  socket.on('verifyPrep', async (tableId, seatIndex) => {
+    try {
+      const deckPrep = await revealPrep(socket, tableId)
+      socket.emit('requestTransaction',
+        await room.connect(socket.account).populateTransaction
+        .verifyPrep(
+          tableId, seatIndex, deckPrep, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
+
+  socket.on('finishSubmit', simpleTxn(socket, deck, 'finishSubmit'))
+
+  socket.on('finishPrep', simpleTxn(socket, room, 'finishPrep'))
 
   socket.on('submitShuffle', async tableId => {
     try {
