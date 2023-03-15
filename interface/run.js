@@ -43,6 +43,42 @@ const deck = new ethers.Contract(process.env.DECK,
   provider)
 console.log(`Deck is ${deck.address}`)
 
+room.on({ address: room.address, topics: [null, null, null, null] },
+  async (log) => {
+    if (!log.removed) {
+      const id = parseInt(log.topics[1])
+      const key = `/logs/t${id}`
+      const ev = room.interface.parseLog(log)
+      const val = {
+        index: [log.blockNumber, log.logIndex],
+        name: ev.name,
+        args: ev.args.slice(1).map(a => ethers.BigNumber.isBigNumber(a) ? a.toNumber() : a)
+      }
+      if (await db.exists(key)) {
+        const blockNumber = await db.getData(`${key}[-1]/index[0]`)
+        if (blockNumber < log.blockNumber ||
+            (blockNumber === log.blockNumber &&
+             (await db.getData(`${key}[-1]/index[1]`)) < log.logIndex)) {
+          await db.push(`${key}[]`, val)
+        }
+        else {
+          const a = await db.getData(key)
+          if (!a.map(x => x.index.join()).includes(`${log.blockNumber},${log.logIndex}`)) {
+            a.push(val)
+            a.sort((x, y) => x.index[0] === y.index[0] ?
+                             x.index[1] - y.index[1] :
+                             x.index[0] - y.index[0])
+            await db.push(key, a)
+          }
+        }
+      }
+      else {
+        await db.push(`${key}[]`, val)
+      }
+    }
+  }
+)
+
 async function refreshBalance(socket) {
   async function b() {
     console.log(`querying balance for ${socket.account.address}...`)
@@ -634,6 +670,21 @@ io.on('connection', async socket => {
     catch (e) {
       socket.emit('errorMsg', e.toString())
     }
+  })
+
+  socket.on('requestLogCount', async (tableId) => {
+    socket.emit('logCount', tableId,
+      (await db.exists(`/logs/t${tableId}`)) ?
+      (await db.count(`/logs/t${tableId}`)) : 0)
+  })
+
+  socket.on('requestLogs', async (tableId, lastN) => {
+    const format = (log) => {
+      return `${log.name}(${log.args.join()})`
+    }
+    socket.emit('logs', tableId,
+      lastN === 1 ? [format(await db.getData(`/logs/t${tableId}[-1]`))] :
+      (await db.getData(`/logs/t${tableId}`)).slice(-lastN).map(log => format(log)))
   })
 
   socket.on('createGame', async data => {

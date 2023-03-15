@@ -131,10 +131,30 @@ rejectTxnButton.addEventListener('click', (e) => {
 
 const emptyAddress = '0x0000000000000000000000000000000000000000'
 
+const logs = {}
+
+socket.on('logCount', (id, count) => {
+  if (logs[id].length < count)
+    socket.emit('requestLogs', id, count - logs[id].length)
+})
+
+socket.on('logs', (id, newLogs) => {
+  logs[id].push(...newLogs)
+  document.getElementById(`logs${id}`).replaceChildren(
+    ...logs[id].map(log => {
+      const li = document.createElement('li')
+      li.innerText = log
+      return li
+    })
+  )
+})
+
 socket.on('pendingGames', (configs, seats) => {
   joinDiv.replaceChildren()
   configs.forEach(config => {
+    if (!(config.id in logs)) logs[config.id] = []
     const li = joinDiv.appendChild(document.createElement('li'))
+    li.appendChild(document.createElement('ul')).id = `logs${config.id}`
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
     const ol = li.appendChild(document.createElement('ol'))
     ol.start = 0
@@ -159,6 +179,7 @@ socket.on('pendingGames', (configs, seats) => {
         socket.emit('startGame', config.id)
       })
     }
+    socket.emit('requestLogCount', config.id)
   })
 })
 
@@ -175,8 +196,10 @@ function cardChar(card) {
 socket.on('activeGames', (configs, data) => {
   playDiv.replaceChildren()
   configs.forEach(config => {
+    if (!(config.id in logs)) logs[config.id] = []
     const di = data[config.id]
     const li = playDiv.appendChild(document.createElement('li'))
+    li.appendChild(document.createElement('ul')).id = `logs${config.id}`
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
     const ul = li.appendChild(document.createElement('ul'))
     ul.appendChild(document.createElement('li')).innerText = `Your seat: ${di.seatIndex}`
@@ -326,6 +349,7 @@ socket.on('activeGames', (configs, data) => {
         }
       }
     }
+    socket.emit('requestLogCount', config.id)
   })
 })
 
