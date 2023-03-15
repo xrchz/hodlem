@@ -86,6 +86,20 @@ def forceSend(_to: address, _amount: uint256) -> bool:
 
 # lobby
 
+event JoinTable:
+  table: indexed(uint256)
+  player: indexed(address)
+
+event LeaveTable:
+  table: indexed(uint256)
+  player: indexed(address)
+
+event StartGame:
+  table: indexed(uint256)
+
+event EndGame:
+  table: indexed(uint256)
+
 @internal
 def playerJoinWaiting(_tableId: uint256):
   if self.numWaiting[_tableId] == empty(uint256):
@@ -94,6 +108,7 @@ def playerJoinWaiting(_tableId: uint256):
     self.prevWaitingTable[_tableId] = 0
     self.prevWaitingTable[self.nextWaitingTable[_tableId]] = _tableId
   self.numWaiting[_tableId] = unsafe_add(self.numWaiting[_tableId], 1)
+  log JoinTable(_tableId, msg.sender)
 
 @internal
 def playerLeaveWaiting(_tableId: uint256, _num: uint256):
@@ -103,9 +118,10 @@ def playerLeaveWaiting(_tableId: uint256, _num: uint256):
     self.prevWaitingTable[self.nextWaitingTable[_tableId]] = self.prevWaitingTable[_tableId]
 
 @internal
-def playerLeaveLive(_tableId: uint256, _player: address, _seatIndex: uint256):
+def playerLeaveLive(_tableId: uint256, _player: address):
   self.nextLiveTable[_player][self.prevLiveTable[_player][_tableId]] = self.nextLiveTable[_player][_tableId]
   self.prevLiveTable[_player][self.nextLiveTable[_player][_tableId]] = self.prevLiveTable[_player][_tableId]
+  log LeaveTable(_tableId, _player)
 
 @internal
 @pure
@@ -174,6 +190,7 @@ def leaveTable(_tableId: uint256, _seatIndex: uint256):
   self.tables[_tableId].seats[_seatIndex] = empty(address)
   self.forceSend(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
   self.playerLeaveWaiting(_tableId, 1)
+  log LeaveTable(_tableId, msg.sender)
 
 @external
 def startGame(_tableId: uint256):
@@ -191,20 +208,28 @@ def startGame(_tableId: uint256):
   self.playerLeaveWaiting(_tableId, numPlayers)
   self.tables[_tableId].phase = Phase_PREP
   self.tables[_tableId].commitBlock = block.number
+  log StartGame(_tableId)
 
 @external
 def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
   self.gameAuth(_tableId)
   player: address = self.tables[_tableId].seats[_seatIndex]
   self.forceSend(player, unsafe_add(self.tables[_tableId].config.bond, _stack))
-  self.playerLeaveLive(_tableId, player, _seatIndex)
+  self.playerLeaveLive(_tableId, player)
 
 @external
 def deleteTable(_tableId: uint256):
   assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
   self.tables[_tableId] = empty(Table)
+  log EndGame(_tableId)
 
 # timeouts
+
+event Challenge:
+  table: indexed(uint256)
+  player: indexed(address)
+  sender: indexed(address)
+  type: uint256
 
 @internal
 @view
@@ -217,14 +242,14 @@ def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
   self.checkDeadline(_tableId, self.tables[_tableId].config.prepBlocks)
   assert not self.tables[_tableId].deck.hasSubmittedPrep(
     self.tables[_tableId].deckId, _seatIndex), "already submitted"
-  self.failChallenge(_tableId, _seatIndex)
+  self.failChallenge(_tableId, _seatIndex, 0)
 
 @external
 def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_SHUF)
   self.checkDeadline(_tableId, self.tables[_tableId].config.shuffBlocks)
   assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
-  self.failChallenge(_tableId, _seatIndex)
+  self.failChallenge(_tableId, _seatIndex, 1)
 
 @external
 def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
@@ -233,7 +258,7 @@ def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
   assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
   assert not self.tables[_tableId].deck.challengeActive(
     self.tables[_tableId].deckId, _seatIndex), "already verified"
-  self.failChallenge(_tableId, _seatIndex)
+  self.failChallenge(_tableId, _seatIndex, 2)
 
 @external
 def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
@@ -241,7 +266,7 @@ def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
   self.checkDeadline(_tableId, self.tables[_tableId].config.dealBlocks)
   assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "not required"
   assert self.decryptCount(_tableId, _cardIndex) == _seatIndex, "already decrypted"
-  self.failChallenge(_tableId, _seatIndex)
+  self.failChallenge(_tableId, _seatIndex, 3)
 
 @external
 def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
@@ -251,10 +276,10 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
   assert self.tables[_tableId].requirement[_cardIndex] == Req_SHOW, "not required"
   assert self.tables[_tableId].deck.openedCard(
     self.tables[_tableId].deckId, _cardIndex) == 0, "already opened"
-  self.failChallenge(_tableId, _seatIndex)
+  self.failChallenge(_tableId, _seatIndex, 4)
 
 @internal
-def failChallenge(_tableId: uint256, _challIndex: uint256):
+def failChallenge(_tableId: uint256, _challIndex: uint256, _type: uint256):
   numPlayers: uint256 = self.tables[_tableId].config.startsWith
   perPlayer: uint256 = unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn)
   # burn the offender's bond + buyIn
@@ -265,26 +290,35 @@ def failChallenge(_tableId: uint256, _challIndex: uint256):
     player: address = self.tables[_tableId].seats[seatIndex]
     if seatIndex == _challIndex:
       self.forceSend(empty(address), perPlayer)
+      log Challenge(_tableId, player, msg.sender, _type)
     else:
       self.forceSend(player, perPlayer)
     # leave the table
-    self.playerLeaveLive(_tableId, player, seatIndex)
+    self.playerLeaveLive(_tableId, player)
   # delete the game
   self.tables[_tableId] = empty(Table)
+  log EndGame(_tableId)
 
 # deck setup
+
+event DeckPrep:
+  table: indexed(uint256)
+  player: indexed(address)
+  step: indexed(uint256)
 
 @external
 def submitPrep(_tableId: uint256, _seatIndex: uint256, _hash: bytes32):
   self.validatePhase(_tableId, Phase_PREP)
   self.checkAuth(_tableId, _seatIndex)
   self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _hash)
+  log DeckPrep(_tableId, msg.sender, 0)
 
 @external
 def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]):
   self.validatePhase(_tableId, Phase_PREP)
   self.checkAuth(_tableId, _seatIndex)
   self.tables[_tableId].deck.verifyPrep(self.tables[_tableId].deckId, _seatIndex, _prep)
+  log DeckPrep(_tableId, msg.sender, 1)
 
 @external
 def finishPrep(_tableId: uint256):
@@ -297,8 +331,14 @@ def finishPrep(_tableId: uint256):
   self.tables[_tableId].phase = Phase_SHUF
   self.tables[_tableId].nextPhase = Phase_PLAY
   self.tables[_tableId].commitBlock = block.number
+  log DeckPrep(_tableId, msg.sender, 2)
 
 # shuffle
+
+event Shuffle:
+  table: indexed(uint256)
+  player: indexed(address)
+  step: indexed(uint256)
 
 @internal
 @view
@@ -314,6 +354,7 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
   self.tables[_tableId].commitBlock = block.number
   self.tables[_tableId].deck.submitShuffle(deckId, _seatIndex, _shuffle)
   self.tables[_tableId].deck.challenge(deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
+  log Shuffle(_tableId, msg.sender, 0)
   self.autoShuffle(_tableId)
   return self.tables[_tableId].deck.respondChallenge(deckId, _seatIndex, _hash)
 
@@ -332,6 +373,7 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
     self.tables[_tableId].deck.defuseNextChallenge(
       self.tables[_tableId].deckId, _seatIndex,
       _commitments[i], _scalars[i], _permutations[i])
+  log Shuffle(_tableId, msg.sender, 1)
   self.autoVerif(_tableId)
 
 @internal
@@ -359,6 +401,7 @@ def autoVerif(_tableId: uint256):
   for _ in range(MAX_SEATS):
     if cur == end:
       self.tables[_tableId].shuffled |= cur
+      log Shuffle(_tableId, msg.sender, 2)
       break
     if self.tables[_tableId].shuffled & cur == 0:
       if self.tables[_tableId].present & cur == 0:
@@ -384,6 +427,17 @@ def markAbsent(_tableId: uint256, _seatIndex: uint256):
   self.tables[_tableId].present &= ~shift(1, _seatIndex)
 
 # deal
+
+event Deal:
+  table: indexed(uint256)
+  player: indexed(address)
+  card: indexed(uint256)
+
+event Show:
+  table: indexed(uint256)
+  player: indexed(address)
+  card: indexed(uint256)
+  show: uint256
 
 @internal
 @view
@@ -417,6 +471,7 @@ def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256
       self.tables[_tableId].deckId, _seatIndex, cardIndex, [data[1], data[2]],
       Proof({gs: [data[3], data[4]], hs: [data[5], data[6]], scx: data[7]}))
     self.autoDecrypt(_tableId, cardIndex)
+    log Deal(_tableId, msg.sender, cardIndex)
 
 @external
 def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[7], 26]):
@@ -429,6 +484,7 @@ def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[
     self.tables[_tableId].deck.openCard(
       self.tables[_tableId].deckId, _seatIndex, cardIndex, data[1],
       Proof({gs: [data[2], data[3]], hs: [data[4], data[5]], scx: data[6]}))
+    log Show(_tableId, msg.sender, cardIndex, data[1])
 
 @internal
 @view
