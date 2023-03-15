@@ -336,6 +336,7 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
   T.reshuffle(_tableId)
   dealer: uint256 = self.games[_tableId].dealer
   self.games[_tableId].dealer = self.roundNextActor(_numPlayers, _tableId, dealer, dealer)
+  self.games[_tableId].actionBlock = empty(uint256)
 
 @internal
 def collectPots(_numPlayers: uint256, _gameId: uint256):
