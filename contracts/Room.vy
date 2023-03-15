@@ -156,8 +156,12 @@ def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uin
 @payable
 def joinTable(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_JOIN)
-  assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
+  numPlayers: uint256 = self.tables[_tableId].config.startsWith
+  assert _seatIndex < numPlayers, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == empty(address), "seatIndex unavailable"
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == numPlayers: break
+    assert self.tables[_tableId].seats[seatIndex] != msg.sender, "already joined"
   assert msg.value == unsafe_add(
     self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn), "incorrect bond + buyIn"
   self.tables[_tableId].seats[_seatIndex] = msg.sender
