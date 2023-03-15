@@ -222,11 +222,14 @@ def deleteTable(_tableId: uint256):
 def validatePhase(_tableId: uint256, _phase: uint256):
   assert self.tables[_tableId].phase == _phase, "wrong phase"
 
+@internal
+def checkDeadline(_tableId: uint256, _blocks: uint256):
+  assert block.number > (self.tables[_tableId].commitBlock + _blocks), "deadline not passed"
+
 @external
 def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_PREP)
-  assert block.number > (self.tables[_tableId].commitBlock +
-                         self.tables[_tableId].config.prepBlocks), "deadline not passed"
+  self.checkDeadline(_tableId, self.tables[_tableId].config.prepBlocks)
   assert not self.tables[_tableId].deck.hasSubmittedPrep(
     self.tables[_tableId].deckId, _seatIndex), "already submitted"
   self.failChallenge(_tableId, _seatIndex)
@@ -234,16 +237,14 @@ def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
 @external
 def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_SHUF)
-  assert block.number > (self.tables[_tableId].commitBlock +
-                         self.tables[_tableId].config.shuffBlocks), "deadline not passed"
+  self.checkDeadline(_tableId, self.tables[_tableId].config.shuffBlocks)
   assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
   self.failChallenge(_tableId, _seatIndex)
 
 @external
 def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_SHUF)
-  assert block.number > (self.tables[_tableId].commitBlock +
-                         self.tables[_tableId].config.verifBlocks), "deadline not passed"
+  self.checkDeadline(_tableId, self.tables[_tableId].config.verifBlocks)
   assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
   assert not self.tables[_tableId].deck.challengeActive(
     self.tables[_tableId].deckId, _seatIndex), "already verified"
@@ -252,8 +253,7 @@ def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
 @external
 def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
   self.validatePhase(_tableId, Phase_DEAL)
-  assert block.number > (self.tables[_tableId].commitBlock +
-                         self.tables[_tableId].config.dealBlocks), "deadline not passed"
+  self.checkDeadline(_tableId, self.tables[_tableId].config.dealBlocks)
   assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "not required"
   assert self.decryptCount(_tableId, _cardIndex) == _seatIndex, "already decrypted"
   self.failChallenge(_tableId, _seatIndex)
@@ -261,8 +261,7 @@ def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
 @external
 def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
   self.validatePhase(_tableId, Phase_DEAL)
-  assert block.number > (self.tables[_tableId].commitBlock +
-                         self.tables[_tableId].config.dealBlocks), "deadline not passed"
+  self.checkDeadline(_tableId, self.tables[_tableId].config.dealBlocks)
   assert self.tables[_tableId].drawIndex[_cardIndex] == _seatIndex, "wrong player"
   assert self.tables[_tableId].requirement[_cardIndex] == Req_SHOW, "not required"
   assert self.tables[_tableId].deck.openedCard(
