@@ -109,11 +109,12 @@ def playerLeaveLive(_tableId: uint256, _player: address, _seatIndex: uint256):
 
 @internal
 @pure
-def ascending(_a: DynArray[uint256, 100]) -> bool:
+def ascending(_a: DynArray[uint256, MAX_LEVELS]) -> bool:
   x: uint256 = 0
   for y in _a:
     if y <= x:
       return False
+    x = y
   return True
 
 @external
