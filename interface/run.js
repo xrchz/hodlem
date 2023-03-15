@@ -448,43 +448,46 @@ async function verifyShuffle(socket, tableId) {
   return [commitment, scalars, responsePermutations]
 }
 
-const emptyProof = {gs: [0, 0], hs: [0, 0], scx: 0}
-
-async function decryptCard(socket, tableId, cardIndex) {
+async function decryptCards(socket, tableId, cardIndices) {
   const deckId = socket.gameConfigs[tableId].deckId
-  const lastDecrypt = await deck.lastDecrypt(deckId, cardIndex)
   const data = socket.activeGames[tableId]
-  if (data.drawIndex[cardIndex] === data.seatIndex) {
-    return [lastDecrypt, emptyProof]
+  const result = []
+  for (const cardIndex of cardIndices) {
+    const lastDecrypt = await deck.lastDecrypt(deckId, cardIndex)
+    if (data.drawIndex[cardIndex] === data.seatIndex) {
+      result.push([cardIndex, lastDecrypt[0], lastDecrypt[1], 0, 0, 0, 0, 0])
+    }
+    else {
+      /*
+        g: self.decks[_id].shuffle[_playerIdx][0],
+        h: _card, <- aka decrypt
+        gx: self.decks[_id].shuffle[unsafe_add(_playerIdx, 1)][0],
+        hx: self.decks[_id].cards[_cardIdx].c[_playerIdx], <- aka lastDecrypt
+      */
+      const secret = BigInt(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
+      const inverse = invert(secret, bn254.CURVE.n)
+      const hx = bigIntegersToPoint(lastDecrypt)
+      const decrypt = hx.multiply(inverse)
+      const g = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex))
+      const gx = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex + 1))
+      const s = randomScalar()
+      const gs = g.multiply(s)
+      const hs = decrypt.multiply(s)
+      const toHash = new Uint8Array(6 * 64)
+      ;[g, decrypt, gx, hx, gs, hs].forEach((p, i) => {
+        toHash.set(pointToBytes(p), i * 64)
+      })
+      const c = bytesToUint256(bn254.CURVE.hash(toHash))
+      const proof = {
+          gs: pointToUints(gs),
+          hs: pointToUints(hs),
+          scx: (s + c * secret) % bn254.CURVE.n
+        }
+      const card = pointToUints(decrypt)
+      result.push([cardIndex, card[0], card[1], proof.gs[0], proof.gs[1], proof.hs[0], proof.hs[1], proof.scx])
+    }
   }
-  else {
-    /*
-      g: self.decks[_id].shuffle[_playerIdx][0],
-      h: _card, <- aka decrypt
-      gx: self.decks[_id].shuffle[unsafe_add(_playerIdx, 1)][0],
-      hx: self.decks[_id].cards[_cardIdx].c[_playerIdx], <- aka lastDecrypt
-    */
-    const secret = BigInt(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
-    const inverse = invert(secret, bn254.CURVE.n)
-    const hx = bigIntegersToPoint(lastDecrypt)
-    const decrypt = hx.multiply(inverse)
-    const g = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex))
-    const gx = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex + 1))
-    const s = randomScalar()
-    const gs = g.multiply(s)
-    const hs = decrypt.multiply(s)
-    const toHash = new Uint8Array(6 * 64)
-    ;[g, decrypt, gx, hx, gs, hs].forEach((p, i) => {
-      toHash.set(pointToBytes(p), i * 64)
-    })
-    const c = bytesToUint256(bn254.CURVE.hash(toHash))
-    const proof = {
-        gs: pointToUints(gs),
-        hs: pointToUints(hs),
-        scx: (s + c * secret) % bn254.CURVE.n
-      }
-    return [pointToUints(decrypt), proof]
-  }
+  return result
 }
 
 async function lookAtCard(socket, tableId, deckId, cardIndex) {
@@ -500,27 +503,31 @@ async function lookAtCard(socket, tableId, deckId, cardIndex) {
   return {openIndex, card: bases[openIndex], lastDecrypt, secret}
 }
 
-async function revealCard(socket, tableId, cardIndex) {
+async function revealCards(socket, tableId, cardIndices) {
   const deckId = socket.gameConfigs[tableId].deckId
   const data = socket.activeGames[tableId]
   const g = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex))
   const gx = bigIntegersToPoint(await deck.shuffleBase(deckId, data.seatIndex + 1))
-  const {secret, card: h, lastDecrypt: hx, openIndex} =
-    await lookAtCard(socket, tableId, deckId, cardIndex)
-  const s = randomScalar()
-  const gs = g.multiply(s)
-  const hs = h.multiply(s)
-  const toHash = new Uint8Array(6 * 64)
-  ;[g, h, gx, hx, gs, hs].forEach((p, i) => {
-    toHash.set(pointToBytes(p), i * 64)
-  })
-  const c = bytesToUint256(bn254.CURVE.hash(toHash))
-  const proof = {
-      gs: pointToUints(gs),
-      hs: pointToUints(hs),
-      scx: (s + c * secret) % bn254.CURVE.n
-    }
-  return [openIndex, proof]
+  const result = []
+  for (const cardIndex of cardIndices) {
+    const {secret, card: h, lastDecrypt: hx, openIndex} =
+      await lookAtCard(socket, tableId, deckId, cardIndex)
+    const s = randomScalar()
+    const gs = g.multiply(s)
+    const hs = h.multiply(s)
+    const toHash = new Uint8Array(6 * 64)
+    ;[g, h, gx, hx, gs, hs].forEach((p, i) => {
+      toHash.set(pointToBytes(p), i * 64)
+    })
+    const c = bytesToUint256(bn254.CURVE.hash(toHash))
+    const proof = {
+        gs: pointToUints(gs),
+        hs: pointToUints(hs),
+        scx: (s + c * secret) % bn254.CURVE.n
+      }
+    result.push([cardIndex, openIndex, proof.gs[0], proof.gs[1], proof.hs[0], proof.hs[1], proof.scx])
+  }
+  return result
 }
 
 async function refreshNetworkInfo(socket) {
@@ -740,14 +747,13 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('decryptCard', async (tableId, cardIndex) => {
+  socket.on('decryptCards', async (tableId, cardIndices) => {
     try {
-      const [card, proof] = await decryptCard(socket, tableId, cardIndex)
+      const data = await decryptCards(socket, tableId, cardIndices)
       socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
-        .decryptCard(
-          tableId, socket.activeGames[tableId].seatIndex, cardIndex,
-          card, proof, {
+        .decryptCards(
+          tableId, socket.activeGames[tableId].seatIndex, data, {
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
           }))
@@ -757,14 +763,13 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('openCard', async (tableId, cardIndex) => {
+  socket.on('openCards', async (tableId, cardIndices) => {
     try {
-      const [openIndex, proof] = await revealCard(socket, tableId, cardIndex)
+      const data = await revealCards(socket, tableId, cardIndices)
       socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
-        .revealCard(
-          tableId, socket.activeGames[tableId].seatIndex, cardIndex,
-          openIndex, proof, {
+        .revealCards(
+          tableId, socket.activeGames[tableId].seatIndex, data, {
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
           }))

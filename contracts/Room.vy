@@ -420,27 +420,29 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
       break
   self.tables[_tableId].commitBlock = block.number
 
-# TODO: decrypt/reveal multiple cards at a time
-
 @external
-def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
-                _card: uint256[2], _proof: Proof):
+def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[8], 26]):
   self.validatePhase(_tableId, Phase_DEAL)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "decrypt not allowed"
-  self.tables[_tableId].deck.decryptCard(
-    self.tables[_tableId].deckId, _seatIndex, _cardIndex, _card, _proof)
-  self.autoDecrypt(_tableId, _cardIndex)
+  for data in _data:
+    cardIndex: uint256 = data[0]
+    assert self.tables[_tableId].requirement[cardIndex] != Req_DECK, "decrypt not allowed"
+    self.tables[_tableId].deck.decryptCard(
+      self.tables[_tableId].deckId, _seatIndex, cardIndex, [data[1], data[2]],
+      Proof({gs: [data[3], data[4]], hs: [data[5], data[6]], scx: data[7]}))
+    self.autoDecrypt(_tableId, cardIndex)
 
 @external
-def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256,
-               _openIndex: uint256, _proof: Proof):
+def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[7], 26]):
   self.validatePhase(_tableId, Phase_DEAL)
   assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].drawIndex[_cardIndex] == _seatIndex, "wrong player"
-  assert self.tables[_tableId].requirement[_cardIndex] == Req_SHOW, "reveal not allowed"
-  self.tables[_tableId].deck.openCard(
-    self.tables[_tableId].deckId, _seatIndex, _cardIndex, _openIndex, _proof)
+  for data in _data:
+    cardIndex: uint256 = data[0]
+    assert self.tables[_tableId].drawIndex[cardIndex] == _seatIndex, "wrong player"
+    assert self.tables[_tableId].requirement[cardIndex] == Req_SHOW, "reveal not allowed"
+    self.tables[_tableId].deck.openCard(
+      self.tables[_tableId].deckId, _seatIndex, cardIndex, data[1],
+      Proof({gs: [data[2], data[3]], hs: [data[4], data[5]], scx: data[6]}))
 
 @internal
 @view

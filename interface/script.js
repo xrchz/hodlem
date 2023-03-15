@@ -239,14 +239,24 @@ socket.on('activeGames', (configs, data) => {
     if (phases[di.phase] === 'DEAL') {
       ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
       const requests = di.waitingOn.flatMap(({who, what, open}) => (who === di.seatIndex ? [[what, open]] : []))
-      requests.forEach(([i, open]) => {
+      const decrypts = requests.filter(([, open]) => !open).map(([i]) => i)
+      const opens = requests.filter(([, open]) => open).map(([i]) => i)
+      if (decrypts.length) {
         const button = ul.appendChild(document.createElement('li')).appendChild(document.createElement('input'))
         button.type = 'button'
-        button.value = `${open ? 'Open' : 'Deal'} card ${i}`
+        button.value = `Deal card${decrypts.length > 1 ? 's' : ''} ${decrypts.join()}`
         button.addEventListener('click', _ => {
-          socket.emit(open ? 'openCard' : 'decryptCard', config.id, i)
+          socket.emit('decryptCards', config.id, decrypts)
         })
-      })
+      }
+      if (opens.length) {
+        const button = ul.appendChild(document.createElement('li')).appendChild(document.createElement('input'))
+        button.type = 'button'
+        button.value = `Open card${opens.length > 1 ? 's' : ''} ${opens.join()}`
+        button.addEventListener('click', _ => {
+          socket.emit('openCards', config.id, opens)
+        })
+      }
       if (!di.waitingOn.length) {
         const button = li.appendChild(document.createElement('input'))
         button.type = 'button'
