@@ -117,6 +117,21 @@ def ascending(_a: DynArray[uint256, MAX_LEVELS]) -> bool:
     x = y
   return True
 
+@internal
+@view
+def validatePhase(_tableId: uint256, _phase: uint256):
+  assert self.tables[_tableId].phase == _phase, "wrong phase"
+
+@internal
+@view
+def gameAuth(_tableId: uint256):
+  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+
+@internal
+@view
+def checkAuth(_tableId: uint256, _seatIndex: uint256):
+  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+
 @external
 @payable
 def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
@@ -140,7 +155,7 @@ def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uin
 @external
 @payable
 def joinTable(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
+  self.validatePhase(_tableId, Phase_JOIN)
   assert _seatIndex < self.tables[_tableId].config.startsWith, "invalid seatIndex"
   assert self.tables[_tableId].seats[_seatIndex] == empty(address), "seatIndex unavailable"
   assert msg.value == unsafe_add(
@@ -150,15 +165,15 @@ def joinTable(_tableId: uint256, _seatIndex: uint256):
 
 @external
 def leaveTable(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
-  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
+  self.validatePhase(_tableId, Phase_JOIN)
+  self.checkAuth(_tableId, _seatIndex)
   self.tables[_tableId].seats[_seatIndex] = empty(address)
   self.forceSend(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
   self.playerLeaveWaiting(_tableId, 1)
 
 @external
 def startGame(_tableId: uint256):
-  assert self.tables[_tableId].phase == Phase_JOIN, "wrong phase"
+  self.validatePhase(_tableId, Phase_JOIN)
   numPlayers: uint256 = self.tables[_tableId].config.startsWith
   for seatIndex in range(MAX_SEATS):
     if seatIndex == numPlayers: break
@@ -175,7 +190,7 @@ def startGame(_tableId: uint256):
 
 @external
 def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   player: address = self.tables[_tableId].seats[_seatIndex]
   self.forceSend(player, unsafe_add(self.tables[_tableId].config.bond, _stack))
   self.playerLeaveLive(_tableId, player, _seatIndex)
@@ -189,10 +204,6 @@ def deleteTable(_tableId: uint256):
 
 @internal
 @view
-def validatePhase(_tableId: uint256, _phase: uint256):
-  assert self.tables[_tableId].phase == _phase, "wrong phase"
-
-@internal
 def checkDeadline(_tableId: uint256, _blocks: uint256):
   assert block.number > (self.tables[_tableId].commitBlock + _blocks), "deadline not passed"
 
@@ -240,11 +251,12 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
 
 @internal
 def failChallenge(_tableId: uint256, _challIndex: uint256):
+  numPlayers: uint256 = self.tables[_tableId].config.startsWith
   perPlayer: uint256 = unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn)
   # burn the offender's bond + buyIn
   # refund the others' bonds and buyIns
   for seatIndex in range(MAX_SEATS):
-    if seatIndex == self.tables[_tableId].config.startsWith:
+    if seatIndex == numPlayers:
       break
     player: address = self.tables[_tableId].seats[seatIndex]
     if seatIndex == _challIndex:
@@ -261,13 +273,13 @@ def failChallenge(_tableId: uint256, _challIndex: uint256):
 @external
 def submitPrep(_tableId: uint256, _seatIndex: uint256, _hash: bytes32):
   self.validatePhase(_tableId, Phase_PREP)
-  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+  self.checkAuth(_tableId, _seatIndex)
   self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _hash)
 
 @external
 def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]):
   self.validatePhase(_tableId, Phase_PREP)
-  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+  self.checkAuth(_tableId, _seatIndex)
   self.tables[_tableId].deck.verifyPrep(self.tables[_tableId].deckId, _seatIndex, _prep)
 
 @external
@@ -293,7 +305,7 @@ def shuffleCount(_tableId: uint256) -> uint256:
 def submitShuffle(_tableId: uint256, _seatIndex: uint256,
                   _shuffle: uint256[2][53], _hash: bytes32) -> uint256:
   self.validatePhase(_tableId, Phase_SHUF)
-  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+  self.checkAuth(_tableId, _seatIndex)
   deckId: uint256 = self.tables[_tableId].deckId
   self.tables[_tableId].commitBlock = block.number
   self.tables[_tableId].deck.submitShuffle(deckId, _seatIndex, _shuffle)
@@ -307,7 +319,7 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
                 _scalars: uint256[63],
                 _permutations: uint256[53][63]):
   self.validatePhase(_tableId, Phase_SHUF)
-  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+  self.checkAuth(_tableId, _seatIndex)
   bit: uint256 = shift(1, _seatIndex)
   assert self.tables[_tableId].shuffled & bit == 0, "already verified"
   self.tables[_tableId].shuffled ^= bit
@@ -354,7 +366,7 @@ def autoVerif(_tableId: uint256):
 
 @external
 def reshuffle(_tableId: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   self.tables[_tableId].deck.resetShuffle(self.tables[_tableId].deckId)
   self.tables[_tableId].shuffled = 0
   self.tables[_tableId].requirement = empty(uint256[26])
@@ -364,7 +376,7 @@ def reshuffle(_tableId: uint256):
 
 @external
 def markAbsent(_tableId: uint256, _seatIndex: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   self.tables[_tableId].present &= ~shift(1, _seatIndex)
 
 # deal
@@ -393,7 +405,7 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
 @external
 def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[8], 26]):
   self.validatePhase(_tableId, Phase_DEAL)
-  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+  self.checkAuth(_tableId, _seatIndex)
   for data in _data:
     cardIndex: uint256 = data[0]
     assert self.tables[_tableId].requirement[cardIndex] != Req_DECK, "decrypt not allowed"
@@ -405,7 +417,7 @@ def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256
 @external
 def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[7], 26]):
   self.validatePhase(_tableId, Phase_DEAL)
-  assert self.tables[_tableId].seats[_seatIndex] == msg.sender, "unauthorised"
+  self.checkAuth(_tableId, _seatIndex)
   for data in _data:
     cardIndex: uint256 = data[0]
     assert self.tables[_tableId].drawIndex[cardIndex] == _seatIndex, "wrong player"
@@ -430,21 +442,21 @@ def checkRevelations(_tableId: uint256) -> bool:
 
 @external
 def endDeal(_tableId: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   self.validatePhase(_tableId, Phase_DEAL)
   assert self.checkRevelations(_tableId), "revelations missing"
   self.tables[_tableId].phase = self.tables[_tableId].nextPhase
 
 @external
 def startDeal(_tableId: uint256, _nextPhase: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   self.tables[_tableId].phase = Phase_DEAL
   self.tables[_tableId].nextPhase = _nextPhase
   self.tables[_tableId].commitBlock = block.number
 
 @external
 def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256:
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   deckIndex: uint256 = self.tables[_tableId].deckIndex
   self.tables[_tableId].drawIndex[deckIndex] = _seatIndex
   self.tables[_tableId].requirement[deckIndex] = Req_HAND
@@ -455,19 +467,19 @@ def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256:
 
 @external
 def showCard(_tableId: uint256, _cardIndex: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   self.tables[_tableId].requirement[_cardIndex] = Req_SHOW
 
 @external
 def burnCard(_tableId: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   self.tables[_tableId].deckIndex = unsafe_add(self.tables[_tableId].deckIndex, 1)
 
 # showdown
 
 @external
 def startShow(_tableId: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   self.tables[_tableId].phase = Phase_SHOW
 
 # view info
