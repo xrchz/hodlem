@@ -76,7 +76,7 @@ interface RoomManager:
     def submitVerif(_tableId: uint256, _seatIndex: uint256, _commitments: DynArray[uint256[2][53], 256],
                     _scalars: DynArray[uint256, 256], _permutations: DynArray[uint256[53], 256]): nonpayable
     def reshuffle(_tableId: uint256): nonpayable
-    def setPresence(_tableId: uint256, _seatIndex: uint256, _present: bool): nonpayable
+    def markAbsent(_tableId: uint256, _seatIndex: uint256): nonpayable
     def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _card: uint256[2], _proof: Proof): nonpayable
     def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _openIndex: uint256, _proof: Proof): nonpayable
     def endDeal(_tableId: uint256): nonpayable
@@ -380,7 +380,7 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
     if seatIndex == _numPlayers:
       break
     if self.games[_tableId].stack[seatIndex] == empty(uint256):
-      T.setPresence(_tableId, seatIndex, False)
+      T.markAbsent(_tableId, seatIndex)
     else:
       self.games[_tableId].numInHand = unsafe_add(
         self.games[_tableId].numInHand, 1)
