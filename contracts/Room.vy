@@ -20,38 +20,7 @@ struct CP:
   p: Proof
 # end of copy
 
-# import Deck as DeckManager
-# TODO: define the interface explicitly instead of importing
-# because of https://github.com/vyperlang/titanoboa/issues/15
-interface DeckManager:
-    def newDeck(_players: uint256) -> uint256: nonpayable
-    def changeDealer(_id: uint256, _newAddress: address): nonpayable
-    def changeAddress(_id: uint256, _playerIdx: uint256, _newAddress: address): nonpayable
-    def submitPrep(_id: uint256, _playerIdx: uint256, _hash: bytes32): nonpayable
-    def verifyPrep(_id: uint256, _playerIdx: uint256, _prep: CP[53]): nonpayable
-    def emptyProof(card: uint256[2]) -> Proof: pure
-    def finishPrep(_id: uint256): nonpayable
-    def resetShuffle(_id: uint256): nonpayable
-    def submitShuffle(_id: uint256, _playerIdx: uint256, _shuffle: uint256[2][53]): nonpayable
-    def challenge(_id: uint256, _playerIdx: uint256, _rounds: uint256): nonpayable
-    def respondChallenge(_id: uint256, _playerIdx: uint256, _hash: bytes32) -> uint256: nonpayable
-    def defuseNextChallenge(_id: uint256, _playerIdx: uint256,
-                            _commitment: uint256[2][53], _scalar: uint256, _permutation: uint256[53]): nonpayable
-    def drawCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256): nonpayable
-    def decryptCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _card: uint256[2], _proof: Proof): nonpayable
-    def openCard(_id: uint256, _playerIdx: uint256, _cardIdx: uint256, _openIdx: uint256, _proof: Proof): nonpayable
-    def hasSubmittedPrep(_id: uint256, _playerIdx: uint256) -> bool: view
-    def hasVerifiedPrep(_id: uint256, _playerIdx: uint256) -> bool: view
-    def prepped(_id: uint256) -> bool: view
-    def shuffleCount(_id: uint256) -> uint256: view
-    def lastShuffle(_id: uint256) -> uint256[2][53]: view
-    def challengeActive(_id: uint256, _playerIdx: uint256) -> bool: view
-    def challengeRnd(_id: uint256, _playerIdx: uint256) -> uint256: view
-    def decryptCount(_id: uint256, _cardIdx: uint256) -> uint256: view
-    def lastDecrypt(_id: uint256, _cardIdx: uint256) -> uint256[2]: view
-    def shuffleBase(_id: uint256, _idx: uint256) -> uint256[2]: view
-    def baseCards(_id: uint256) -> uint256[2][53]: view
-    def openedCard(_id: uint256, _cardIdx: uint256) -> uint256: view
+import Deck as DeckManager
 
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament structure

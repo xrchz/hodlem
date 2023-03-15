@@ -53,59 +53,7 @@ Phase_PLAY: constant(uint256) = 5 # betting; new card revelations may become req
 Phase_SHOW: constant(uint256) = 6 # showdown; new card revelations may become required
 # end copy
 
-# import Room as RoomManager
-# TODO: define the interface explicitly instead of importing
-# because of https://github.com/vyperlang/titanoboa/issues/15
-# External Interfaces
-interface RoomManager:
-    def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256: payable
-    def joinTable(_tableId: uint256, _seatIndex: uint256): payable
-    def leaveTable(_tableId: uint256, _seatIndex: uint256): nonpayable
-    def startGame(_tableId: uint256): nonpayable
-    def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256): nonpayable
-    def deleteTable(_tableId: uint256): nonpayable
-    def prepareTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
-    def shuffleTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
-    def verificationTimeout(_tableId: uint256, _seatIndex: uint256): nonpayable
-    def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
-    def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256): nonpayable
-    def submitPrep(_tableId: uint256, _seatIndex: uint256, _hash: bytes32): nonpayable
-    def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]): nonpayable
-    def finishPrep(_tableId: uint256): nonpayable
-    def submitShuffle(_tableId: uint256, _seatIndex: uint256, _shuffle: uint256[2][53], _hash: bytes32) -> uint256: nonpayable
-    def submitVerif(_tableId: uint256, _seatIndex: uint256, _commitments: DynArray[uint256[2][53], 256],
-                    _scalars: DynArray[uint256, 256], _permutations: DynArray[uint256[53], 256]): nonpayable
-    def reshuffle(_tableId: uint256): nonpayable
-    def markAbsent(_tableId: uint256, _seatIndex: uint256): nonpayable
-    def decryptCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _card: uint256[2], _proof: Proof): nonpayable
-    def revealCard(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256, _openIndex: uint256, _proof: Proof): nonpayable
-    def endDeal(_tableId: uint256): nonpayable
-    def startDeal(_tableId: uint256, _nextPhase: uint256): nonpayable
-    def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256: nonpayable
-    def showCard(_tableId: uint256, _cardIndex: uint256): nonpayable
-    def burnCard(_tableId: uint256): nonpayable
-    def startShow(_tableId: uint256): nonpayable
-    def authorised(_tableId: uint256, _phase: uint256, _seatIndex: uint256 = empty(uint256), _address: address = empty(address)) -> bool: view
-    def cardAt(_tableId: uint256, _deckIndex: uint256) -> uint256: view
-    def deckIndex(_tableId: uint256) -> uint256: view
-    def numPlayers(_tableId: uint256) -> uint256: view
-    def playerAt(_tableId: uint256, _seatIndex: uint256) -> address: view
-    def maxPlayers(_tableId: uint256) -> uint256: view
-    def buyIn(_tableId: uint256) -> uint256: view
-    def actBlocks(_tableId: uint256) -> uint256: view
-    def levelBlocks(_tableId: uint256) -> uint256: view
-    def numLevels(_tableId: uint256) -> uint256: view
-    def level(_tableId: uint256, level: uint256) -> uint256: view
-    def shuffled(_tableId: uint256) -> uint256: view
-    def configParams(_tableId: uint256) -> uint256[12]: view
-    def configStructure(_tableId: uint256) -> DynArray[uint256, 100]: view
-    def phaseCommit(_tableId: uint256) -> uint256[2]: view
-    def cardInfo(_tableId: uint256) -> uint256[26][4]: view
-    def nextWaitingTable(arg0: uint256) -> uint256: view
-    def prevWaitingTable(arg0: uint256) -> uint256: view
-    def nextLiveTable(arg0: address, arg1: uint256) -> uint256: view
-    def prevLiveTable(arg0: address, arg1: uint256) -> uint256: view
-
+import Room as RoomManager
 T: immutable(RoomManager)
 
 @external
