@@ -385,6 +385,7 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
     else:
       self.games[_tableId].numInHand = unsafe_add(
         self.games[_tableId].numInHand, 1)
+      self.games[_tableId].liveUntil[seatIndex] = 1
   self.games[_tableId].board = empty(uint256[5])
   T.reshuffle(_tableId)
   dealer: uint256 = self.games[_tableId].dealer
