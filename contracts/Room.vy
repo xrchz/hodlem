@@ -89,6 +89,7 @@ def forceSend(_to: address, _amount: uint256) -> bool:
 event JoinTable:
   table: indexed(uint256)
   player: indexed(address)
+  seat: indexed(uint256)
 
 event LeaveTable:
   table: indexed(uint256)
@@ -101,14 +102,14 @@ event EndGame:
   table: indexed(uint256)
 
 @internal
-def playerJoinWaiting(_tableId: uint256):
+def playerJoinWaiting(_tableId: uint256, _seatIndex: uint256):
   if self.numWaiting[_tableId] == empty(uint256):
     self.nextWaitingTable[_tableId] = self.nextWaitingTable[0]
     self.nextWaitingTable[0] = _tableId
     self.prevWaitingTable[_tableId] = 0
     self.prevWaitingTable[self.nextWaitingTable[_tableId]] = _tableId
   self.numWaiting[_tableId] = unsafe_add(self.numWaiting[_tableId], 1)
-  log JoinTable(_tableId, msg.sender)
+  log JoinTable(_tableId, msg.sender, _seatIndex)
 
 @internal
 def playerLeaveWaiting(_tableId: uint256, _num: uint256):
@@ -165,7 +166,7 @@ def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uin
   self.tables[tableId].config = _config
   self.tables[tableId].seats[_seatIndex] = msg.sender
   self.nextTableId = unsafe_add(tableId, 1)
-  self.playerJoinWaiting(tableId)
+  self.playerJoinWaiting(tableId, _seatIndex)
   return tableId
 
 @external
@@ -181,7 +182,7 @@ def joinTable(_tableId: uint256, _seatIndex: uint256):
   assert msg.value == unsafe_add(
     self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn), "incorrect bond + buyIn"
   self.tables[_tableId].seats[_seatIndex] = msg.sender
-  self.playerJoinWaiting(_tableId)
+  self.playerJoinWaiting(_tableId, _seatIndex)
 
 @external
 def leaveTable(_tableId: uint256, _seatIndex: uint256):

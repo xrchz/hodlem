@@ -3,12 +3,11 @@
 
 # TODO: finish frontend
 # TODO: add pause?
-# TODO: add event logs?
 # TODO: add rake (rewards tabs for progress txns)?
 # TODO: add penalties (instead of full abort on failure)?
 
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
-MAX_PLAYERS: constant(uint256) = 1000 # to distinguish from MAX_SIZE when inlining
+MAX_PLAYERS: constant(uint256) = 127 # to distinguish from MAX_SIZE when inlining
 
 struct Proof:
   # signature to confirm log_g(gx) = log_h(hx)
@@ -96,11 +95,16 @@ def dealHighCard(_tableId: uint256):
     T.showCard(_tableId, T.dealTo(_tableId, seatIndex))
   T.startDeal(_tableId, Phase_PLAY)
 
+event DealRound:
+  table: indexed(uint256)
+  street: indexed(uint256)
+
 @external
 def dealHoleCards(_tableId: uint256):
   numPlayers: uint256 = T.numPlayers(_tableId)
   assert (self.afterShuffle(numPlayers, _tableId) and
           self.games[_tableId].startBlock != empty(uint256)), "wrong phase"
+  log DealRound(_tableId, 1)
   dealer: uint256 = self.games[_tableId].dealer
   seatIndex: uint256 = dealer
   for i in range(2):
@@ -110,6 +114,10 @@ def dealHoleCards(_tableId: uint256):
       if seatIndex == dealer:
         break
   T.startDeal(_tableId, Phase_PLAY)
+
+event SelectDealer:
+  table: indexed(uint256)
+  seat: indexed(uint256)
 
 @external
 def selectDealer(_tableId: uint256):
@@ -135,6 +143,12 @@ def selectDealer(_tableId: uint256):
   self.games[_tableId].startBlock = block.number
   T.reshuffle(_tableId)
   self.games[_tableId].dealer = highestCardSeatIndex
+  log SelectDealer(_tableId, highestCardSeatIndex)
+
+event PostBlind:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+  bet: uint256
 
 @external
 def postBlinds(_tableId: uint256):
@@ -147,9 +161,11 @@ def postBlinds(_tableId: uint256):
   seatIndex: uint256 = self.roundNextActor(numPlayers, _tableId, dealer, dealer)
   blind: uint256 = self.smallBlind(_tableId)
   self.placeBet(_tableId, seatIndex, blind)
+  log PostBlind(_tableId, seatIndex, blind)
   seatIndex = self.roundNextActor(numPlayers, _tableId, seatIndex, dealer)
   blind = unsafe_add(blind, blind)
   self.placeBet(_tableId, seatIndex, blind)
+  log PostBlind(_tableId, seatIndex, blind)
   self.games[_tableId].betIndex = seatIndex
   self.games[_tableId].minRaise = blind
   self.games[_tableId].actionIndex = self.roundNextActor(numPlayers, _tableId, seatIndex, seatIndex)
@@ -164,15 +180,26 @@ def validateTurn(_tableId: uint256, _seatIndex: uint256, _phase: uint256 = Phase
 
 @internal
 def removeFromPots(_tableId: uint256, _seatIndex: uint256):
+  numPlayers: uint256 = T.numPlayers(_tableId)
+  liveUntil: uint256 = self.games[_tableId].liveUntil[_seatIndex]
+  for potIndex in range(MAX_SEATS):
+    if potIndex == liveUntil: break
+    self.moveBetToPot(_tableId, _seatIndex, potIndex,
+      self.potSize(numPlayers, _tableId, potIndex))
   self.games[_tableId].liveUntil[_seatIndex] = 0
   assert self.games[_tableId].numInHand != 0, "TODO: internal consistency check"
   self.games[_tableId].numInHand = unsafe_sub(
     self.games[_tableId].numInHand, 1)
 
+event Fold:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+
 @external
 def fold(_tableId: uint256, _seatIndex: uint256):
   self.validateTurn(_tableId, _seatIndex)
   self.removeFromPots(_tableId, _seatIndex)
+  log Fold(_tableId, _seatIndex)
   self.afterAct(_tableId, _seatIndex)
 
 @internal
@@ -185,6 +212,11 @@ def addSidePot(_numPlayers: uint256, _gameId: uint256, _nextPot: uint256):
     elif self.games[_gameId].liveUntil[seatIndex] == _nextPot:
       self.games[_gameId].liveUntil[seatIndex] = unsafe_add(_nextPot, 1)
 
+event CallBet:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+  bet: uint256
+
 @external
 def callBet(_tableId: uint256, _seatIndex: uint256):
   self.validateTurn(_tableId, _seatIndex)
@@ -194,7 +226,13 @@ def callBet(_tableId: uint256, _seatIndex: uint256):
     self.placeBet(_tableId, _seatIndex, raiseBy)
     if self.games[_tableId].stack[_seatIndex] < raiseBy: # calling all-in with side-pot
       self.addSidePot(T.numPlayers(_tableId), _tableId, self.games[_tableId].liveUntil[_seatIndex])
+  log CallBet(_tableId, _seatIndex, bet)
   self.afterAct(_tableId, _seatIndex)
+
+event RaiseBet:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+  bet: uint256
 
 @external
 def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
@@ -212,6 +250,7 @@ def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
   else: # raising all-in
     assert self.games[_tableId].stack[_seatIndex] == 0, "below minimum"
     self.addSidePot(T.numPlayers(_tableId), _tableId, self.games[_tableId].liveUntil[_seatIndex])
+  log RaiseBet(_tableId, _seatIndex, _raiseTo)
   self.afterAct(_tableId, _seatIndex)
 
 @external
@@ -236,14 +275,20 @@ def endDeal(_tableId: uint256):
     # skip to showdown when all players are all-in
     self.afterAct(_tableId, self.games[_tableId].dealer)
 
+event Timeout:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+
 @external
 def actTimeout(_tableId: uint256):
   assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
   assert self.games[_tableId].actionBlock != empty(uint256), "not active"
   assert block.number > (self.games[_tableId].actionBlock +
                          T.actBlocks(_tableId)), "deadline not passed"
-  self.removeFromPots(_tableId, self.games[_tableId].actionIndex)
-  self.afterAct(_tableId, self.games[_tableId].actionIndex)
+  seatIndex: uint256 = self.games[_tableId].actionIndex
+  self.removeFromPots(_tableId, seatIndex)
+  log Timeout(_tableId, seatIndex)
+  self.afterAct(_tableId, seatIndex)
 
 @external
 def showCards(_tableId: uint256, _seatIndex: uint256):
@@ -256,6 +301,7 @@ def showCards(_tableId: uint256, _seatIndex: uint256):
 def foldCards(_tableId: uint256, _seatIndex: uint256):
   self.validateTurn(_tableId, _seatIndex, Phase_SHOW)
   self.removeFromPots(_tableId, _seatIndex)
+  log Fold(_tableId, _seatIndex)
 
 @external
 def endShow(_tableId: uint256):
@@ -295,6 +341,7 @@ def endShow(_tableId: uint256):
     for winnerIndex in winners:
       self.games[_tableId].pot[potIndex] = unsafe_sub(self.games[_tableId].pot[potIndex], share)
       self.games[_tableId].stack[winnerIndex] = unsafe_add(self.games[_tableId].stack[winnerIndex], share)
+      log CollectPot(_tableId, winnerIndex, share)
     # odd chip(s) distributed according to overall card rank
     if self.games[_tableId].pot[potIndex] != 0:
       for negCard in range(52):
@@ -304,6 +351,7 @@ def endShow(_tableId: uint256):
               T.cardAt(_tableId, self.games[_tableId].hands[winnerIndex][1]) == card):
             self.games[_tableId].pot[potIndex] = unsafe_sub(self.games[_tableId].pot[potIndex], 1)
             self.games[_tableId].stack[winnerIndex] = unsafe_add(self.games[_tableId].stack[winnerIndex], 1)
+            log CollectPot(_tableId, winnerIndex, 1)
             if self.games[_tableId].pot[potIndex] == 0:
               break
         if self.games[_tableId].pot[potIndex] == 0:
@@ -321,6 +369,10 @@ def endShow(_tableId: uint256):
   else:
     self.games[_tableId].actionBlock = block.number
 
+event Eliminate:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+
 @internal
 def nextHand(_numPlayers: uint256, _tableId: uint256):
   self.games[_tableId].numInHand = 0
@@ -329,6 +381,7 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
       break
     if self.games[_tableId].stack[seatIndex] == empty(uint256):
       T.markAbsent(_tableId, seatIndex)
+      log Eliminate(_tableId, seatIndex)
     else:
       self.games[_tableId].numInHand = unsafe_add(
         self.games[_tableId].numInHand, 1)
@@ -361,6 +414,11 @@ def collectPots(_numPlayers: uint256, _gameId: uint256):
         self.games[_gameId].bet[seatIndex] = unsafe_sub(self.games[_gameId].bet[seatIndex], minBet)
         self.games[_gameId].pot[potIndex] = unsafe_add(self.games[_gameId].pot[potIndex], minBet)
 
+event CollectPot:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+  pot: uint256
+
 @internal
 def settleUncontested(_numPlayers: uint256, _gameId: uint256) -> uint256:
   numContested: uint256 = 0
@@ -378,10 +436,12 @@ def settleUncontested(_numPlayers: uint256, _gameId: uint256) -> uint256:
     if potPlayers[potIndex] == 0:
       break
     elif potPlayers[potIndex] == 1:
+      contestantIndex: uint256 = contestant[potIndex]
+      amount: uint256 = self.games[_gameId].pot[potIndex]
       self.games[_gameId].stack[contestant[potIndex]] = unsafe_add(
-        self.games[_gameId].stack[contestant[potIndex]],
-        self.games[_gameId].pot[potIndex])
+        self.games[_gameId].stack[contestant[potIndex]], amount)
       self.games[_gameId].pot[potIndex] = empty(uint256)
+      log CollectPot(_gameId, contestantIndex, amount)
     else:
       numContested = unsafe_add(numContested, 1)
   return numContested
@@ -397,6 +457,9 @@ def playersLeft(_numPlayers: uint256, _gameId: uint256) -> uint256:
       playersLeft = unsafe_add(playersLeft, 1)
   return playersLeft
 
+event EndGame:
+  table: indexed(uint256)
+
 @internal
 def gameOver(_numPlayers: uint256, _tableId: uint256):
   # everyone gets their stack + bond
@@ -407,6 +470,7 @@ def gameOver(_numPlayers: uint256, _tableId: uint256):
   # delete the game
   self.games[_tableId] = empty(Game)
   T.deleteTable(_tableId)
+  log EndGame(_tableId)
 
 @internal
 def drawNextCard(_tableId: uint256):
@@ -420,6 +484,7 @@ def drawNextCard(_tableId: uint256):
   done: bool = False
   for street in range(2, 5):
     if self.games[_tableId].board[street] == empty(uint256):
+      log DealRound(_tableId, street)
       T.burnCard(_tableId)
       if street == 2:
         for drawIndex in range(3):

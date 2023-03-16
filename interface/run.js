@@ -43,41 +43,50 @@ const deck = new ethers.Contract(process.env.DECK,
   provider)
 console.log(`Deck is ${deck.address}`)
 
-room.on({ address: room.address, topics: [null, null, null, null] },
-  async (log) => {
-    if (!log.removed) {
-      const id = parseInt(log.topics[1])
-      const key = `/logs/t${id}`
-      const ev = room.interface.parseLog(log)
-      const val = {
-        index: [log.blockNumber, log.logIndex],
-        name: ev.name,
-        args: ev.args.slice(1).map(a => ethers.BigNumber.isBigNumber(a) ? a.toNumber() : a)
-      }
-      if (await db.exists(key)) {
-        const blockNumber = await db.getData(`${key}[-1]/index[0]`)
-        if (blockNumber < log.blockNumber ||
-            (blockNumber === log.blockNumber &&
-             (await db.getData(`${key}[-1]/index[1]`)) < log.logIndex)) {
-          await db.push(`${key}[]`, val)
-        }
-        else {
-          const a = await db.getData(key)
-          if (!a.map(x => x.index.join()).includes(`${log.blockNumber},${log.logIndex}`)) {
-            a.push(val)
-            a.sort((x, y) => x.index[0] === y.index[0] ?
-                             x.index[1] - y.index[1] :
-                             x.index[0] - y.index[0])
-            await db.push(key, a)
-          }
-        }
-      }
-      else {
+function processArg(arg, index, name) {
+  if (['RaiseBet', 'CallBet', 'PostBlind', 'CollectPot'].includes(name) && index === 2) return ethers.utils.formatEther(arg)
+  else if (ethers.BigNumber.isBigNumber(arg)) return arg.toNumber()
+  else return arg
+}
+
+async function onLog(iface, log) {
+  if (!log.removed) {
+    const id = parseInt(log.topics[1])
+    const key = `/logs/t${id}`
+    const ev = iface.parseLog(log)
+    const val = {
+      index: [log.blockNumber, log.logIndex],
+      name: ev.name,
+      args: ev.args.slice(1).map((a, i) => processArg(a, i, ev.name))
+    }
+    if (await db.exists(key)) {
+      const blockNumber = await db.getData(`${key}[-1]/index[0]`)
+      if (blockNumber < log.blockNumber ||
+          (blockNumber === log.blockNumber &&
+           (await db.getData(`${key}[-1]/index[1]`)) < log.logIndex)) {
         await db.push(`${key}[]`, val)
       }
+      else {
+        const a = await db.getData(key)
+        if (!a.map(x => x.index.join()).includes(`${log.blockNumber},${log.logIndex}`)) {
+          a.push(val)
+          a.sort((x, y) => x.index[0] === y.index[0] ?
+                           x.index[1] - y.index[1] :
+                           x.index[0] - y.index[0])
+          await db.push(key, a)
+        }
+      }
+    }
+    else {
+      await db.push(`${key}[]`, val)
     }
   }
-)
+}
+
+room.on({ address: room.address, topics: [null, null, null, null] },
+  log => onLog(room.interface, log))
+game.on({ address: game.address, topics: [null, null, null, null] },
+  log => onLog(game.interface, log))
 
 async function refreshBalance(socket) {
   async function b() {

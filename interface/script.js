@@ -136,13 +136,15 @@ socket.on('logCount', (id, count) => {
 
 socket.on('logs', (id, newLogs) => {
   logs[id].push(...newLogs)
-  document.getElementById(`logs${id}`).replaceChildren(
+  const logsList = document.getElementById(`logs${id}`)
+  logsList.replaceChildren(
     ...logs[id].map(log => {
       const li = document.createElement('li')
       li.innerText = log
       return li
     })
   )
+  logsList.lastElementChild.scrollIntoView(false)
 })
 
 socket.on('pendingGames', (configs, seats) => {
