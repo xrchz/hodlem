@@ -23,6 +23,11 @@ body {
   text-align: right;
 }
 
+ul.logs {
+  height: 10em;
+  overflow: auto;
+}
+
 .amountGwei {
   width: 8em;
 }

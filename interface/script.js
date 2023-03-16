@@ -22,8 +22,6 @@ resetFeesButton.addEventListener('click', (e) => {
   resetFeesButton.disabled = true
 })
 
-resetFeesButton.dispatchEvent(new Event('click'))
-
 socket.on('maxFeePerGas', fee => {
   maxFeeElement.value = fee
 })
@@ -80,8 +78,6 @@ socket.on('account', (address, privkey) => {
   joinDiv.replaceChildren()
   playDiv.replaceChildren()
 })
-
-privkeyElement.dispatchEvent(new Event('change'))
 
 const balanceElement = document.getElementById('balance')
 const sendAmountElement = document.getElementById('sendAmount')
@@ -155,6 +151,7 @@ socket.on('pendingGames', (configs, seats) => {
     if (!(config.id in logs)) logs[config.id] = []
     const li = joinDiv.appendChild(document.createElement('li'))
     li.appendChild(document.createElement('ul')).id = `logs${config.id}`
+    li.firstElementChild.classList.add('logs')
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
     const ol = li.appendChild(document.createElement('ol'))
     ol.start = 0
@@ -179,7 +176,7 @@ socket.on('pendingGames', (configs, seats) => {
         socket.emit('startGame', config.id)
       })
     }
-    socket.emit('requestLogCount', config.id)
+    setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
 })
 
@@ -200,6 +197,7 @@ socket.on('activeGames', (configs, data) => {
     const di = data[config.id]
     const li = playDiv.appendChild(document.createElement('li'))
     li.appendChild(document.createElement('ul')).id = `logs${config.id}`
+    li.firstElementChild.classList.add('logs')
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
     const ul = li.appendChild(document.createElement('ul'))
     ul.appendChild(document.createElement('li')).innerText = `Your seat: ${di.seatIndex}`
@@ -349,7 +347,7 @@ socket.on('activeGames', (configs, data) => {
         }
       }
     }
-    socket.emit('requestLogCount', config.id)
+    setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
 })
 
@@ -383,3 +381,8 @@ createGameButton.addEventListener('click', (e) => {
     configElements.forEach(x => x.reportValidity())
   }
 })
+
+setTimeout(() => {
+  resetFeesButton.dispatchEvent(new Event('click'))
+  privkeyElement.dispatchEvent(new Event('change'))
+}, 100)
