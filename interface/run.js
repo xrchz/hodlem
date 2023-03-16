@@ -829,6 +829,10 @@ io.on('connection', async socket => {
 
   socket.on('endDeal', simpleTxn(socket, game, 'endDeal'))
 
+  socket.on('foldCards', simpleTxn(socket, game, 'foldCards'))
+
+  socket.on('show', simpleTxn(socket, game, 'showCards'))
+
   socket.on('fold', simpleTxn(socket, game, 'fold'))
 
   socket.on('call', simpleTxn(socket, game, 'callBet'))

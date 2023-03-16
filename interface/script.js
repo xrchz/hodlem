@@ -311,6 +311,22 @@ socket.on('activeGames', (configs, data) => {
         })
       }
     }
+    if (phases[di.phase] === 'SHOW') {
+      if (di.actionIndex == di.seatIndex) {
+        const fold = li.appendChild(document.createElement('input'))
+        fold.type = 'button'
+        fold.value = 'Fold'
+        fold.addEventListener('click', _ => {
+          socket.emit('foldCards', config.id, di.seatIndex)
+        })
+        const call = li.appendChild(document.createElement('input'))
+        call.type = 'button'
+        call.value = 'Show'
+        call.addEventListener('click', _ => {
+          socket.emit('show', config.id, di.seatIndex)
+        })
+      }
+    }
     setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
 })

@@ -24,7 +24,7 @@ body {
 }
 
 ul.logs {
-  height: 10em;
+  max-height: 10em;
   overflow: auto;
 }
 
