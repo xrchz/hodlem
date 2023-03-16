@@ -313,28 +313,34 @@ event DeckPrep:
 def submitPrep(_tableId: uint256, _seatIndex: uint256, _hash: bytes32):
   self.validatePhase(_tableId, Phase_PREP)
   self.checkAuth(_tableId, _seatIndex)
-  D.submitPrep(self.tables[_tableId].deckId, _seatIndex, _hash)
+  deckId: uint256 = self.tables[_tableId].deckId
+  D.submitPrep(deckId, _seatIndex, _hash)
   log DeckPrep(_tableId, msg.sender, 0)
+  numSubmitted: uint256 = unsafe_add(self.tables[_tableId].deckIndex, 1)
+  self.tables[_tableId].deckIndex = numSubmitted
+  if numSubmitted == self.tables[_tableId].config.startsWith:
+    D.finishSubmit(deckId)
+    self.tables[_tableId].deckIndex = 0
 
 @external
 def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]):
   self.validatePhase(_tableId, Phase_PREP)
   self.checkAuth(_tableId, _seatIndex)
-  D.verifyPrep(self.tables[_tableId].deckId, _seatIndex, _prep)
+  deckId: uint256 = self.tables[_tableId].deckId
+  D.verifyPrep(deckId, _seatIndex, _prep)
   log DeckPrep(_tableId, msg.sender, 1)
-
-@external
-def finishPrep(_tableId: uint256):
-  self.validatePhase(_tableId, Phase_PREP)
-  D.finishPrep(self.tables[_tableId].deckId)
-  for seatIndex in range(MAX_SEATS):
-    if seatIndex == self.tables[_tableId].config.startsWith: break
-    self.tables[_tableId].drawIndex[seatIndex] = seatIndex
-    self.tables[_tableId].requirement[seatIndex] = Req_SHOW
-  self.tables[_tableId].phase = Phase_SHUF
-  self.tables[_tableId].nextPhase = Phase_PLAY
-  self.tables[_tableId].commitBlock = block.number
-  log DeckPrep(_tableId, msg.sender, 2)
+  numVerified: uint256 = unsafe_add(self.tables[_tableId].deckIndex, 1)
+  self.tables[_tableId].deckIndex = numVerified
+  if numVerified == self.tables[_tableId].config.startsWith:
+    D.finishPrep(deckId)
+    for seatIndex in range(MAX_SEATS):
+      if seatIndex == numVerified: break
+      self.tables[_tableId].drawIndex[seatIndex] = seatIndex
+      self.tables[_tableId].requirement[seatIndex] = Req_SHOW
+    self.tables[_tableId].deckIndex = 0
+    self.tables[_tableId].phase = Phase_SHUF
+    self.tables[_tableId].nextPhase = Phase_PLAY
+    self.tables[_tableId].commitBlock = block.number
 
 # shuffle
 

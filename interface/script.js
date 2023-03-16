@@ -205,26 +205,14 @@ socket.on('activeGames', (configs, data) => {
     ul.appendChild(document.createElement('li')).innerText = `Your seat: ${di.seatIndex}`
     ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[di.phase]}`
     if (phases[di.phase] === 'PREP') {
-      if (!di.waitingOn.length) {
+      ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+      if (di.waitingOn.includes(di.seatIndex)) {
         const button = li.appendChild(document.createElement('input'))
         button.type = 'button'
-        button.value = `Finish prep ${di.reveal ? 'reveals' : 'commits'}`
-        button.addEventListener('click',
-          di.reveal ?
-          _ => { socket.emit('finishPrep', config.id) } :
-          _ => { socket.emit('finishSubmit', config.deckId) }
-        )
-      }
-      else {
-        ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
-        if (di.waitingOn.includes(di.seatIndex)) {
-          const button = li.appendChild(document.createElement('input'))
-          button.type = 'button'
-          button.value = `${di.reveal ? 'Reveal' : 'Commit'} preparation`
-          button.addEventListener('click', _ => {
-            socket.emit(`${di.reveal ? 'verify' : 'submit'}Prep`, config.id, di.seatIndex)
-          })
-        }
+        button.value = `${di.reveal ? 'Reveal' : 'Commit'} preparation`
+        button.addEventListener('click', _ => {
+          socket.emit(`${di.reveal ? 'verify' : 'submit'}Prep`, config.id, di.seatIndex)
+        })
       }
     }
     else {
