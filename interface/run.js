@@ -44,7 +44,7 @@ const deck = new ethers.Contract(process.env.DECK,
 console.log(`Deck is ${deck.address}`)
 
 function processArg(arg, index, name) {
-  if (['RaiseBet', 'CallBet', 'PostBlind', 'CollectPot'].includes(name) && index === 1) return ethers.utils.formatEther(arg)
+  if (['RaiseBet', 'CallBet', 'PostBlind', 'CollectPot'].includes(name) && index >= 1) return ethers.utils.formatEther(arg)
   else if (ethers.BigNumber.isBigNumber(arg)) return arg.toNumber()
   else return arg
 }
