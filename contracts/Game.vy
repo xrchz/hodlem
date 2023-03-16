@@ -392,6 +392,22 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
   self.games[_tableId].actionBlock = empty(uint256)
 
 @internal
+@view
+def potSize(_numPlayers: uint256, _tableId: uint256, _potIndex: uint256) -> uint256:
+  minBet: uint256 = max_value(uint256)
+  for seatIndex in range(MAX_SEATS):
+    if seatIndex == _numPlayers:
+      break
+    if _potIndex < self.games[_tableId].liveUntil[seatIndex]:
+      minBet = min(minBet, self.games[_tableId].bet[seatIndex])
+  return minBet
+
+@internal
+def moveBetToPot(_tableId: uint256, _seatIndex: uint256, _potIndex: uint256, _amount: uint256):
+  self.games[_tableId].bet[_seatIndex] = unsafe_sub(self.games[_tableId].bet[_seatIndex], _amount)
+  self.games[_tableId].pot[_potIndex] = unsafe_add(self.games[_tableId].pot[_potIndex], _amount)
+
+@internal
 def collectPots(_numPlayers: uint256, _gameId: uint256):
   maxLiveUntil: uint256 = 0
   for seatIndex in range(MAX_SEATS):
@@ -401,18 +417,12 @@ def collectPots(_numPlayers: uint256, _gameId: uint256):
   for potIndex in range(MAX_SEATS):
     if potIndex == maxLiveUntil:
       break
-    minBet: uint256 = max_value(uint256)
+    minBet: uint256 = self.potSize(_numPlayers, _gameId, potIndex)
     for seatIndex in range(MAX_SEATS):
       if seatIndex == _numPlayers:
         break
       if potIndex < self.games[_gameId].liveUntil[seatIndex]:
-        minBet = min(minBet, self.games[_gameId].bet[seatIndex])
-    for seatIndex in range(MAX_SEATS):
-      if seatIndex == _numPlayers:
-        break
-      if potIndex < self.games[_gameId].liveUntil[seatIndex]:
-        self.games[_gameId].bet[seatIndex] = unsafe_sub(self.games[_gameId].bet[seatIndex], minBet)
-        self.games[_gameId].pot[potIndex] = unsafe_add(self.games[_gameId].pot[potIndex], minBet)
+        self.moveBetToPot(_gameId, seatIndex, potIndex, minBet)
 
 event CollectPot:
   table: indexed(uint256)
