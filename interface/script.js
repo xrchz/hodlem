@@ -227,6 +227,18 @@ socket.on('activeGames', (configs, data) => {
         }
       }
     }
+    else {
+      ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
+      ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
+      ul.appendChild(document.createElement('li')).innerText = `Board: ${di.board.map(card => cardChar(card - 1)).join()}`
+      ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
+      const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
+      ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
+      const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
+      ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
+      ul.appendChild(document.createElement('li')).innerText = `Bet: ${di.bet[di.betIndex]}`
+      ul.appendChild(document.createElement('li')).innerText = `Pots: ${JSON.stringify(di.pot)}`
+    }
     if (phases[di.phase] === 'SHUF') {
       if (di.shuffleCount < config.startsWith) {
         ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${di.shuffleCount}`
@@ -250,14 +262,6 @@ socket.on('activeGames', (configs, data) => {
           })
         }
       }
-    }
-    if (di.toDeal) {
-      const button = li.appendChild(document.createElement('input'))
-      button.type = 'button'
-      button.value = `Deal ${di.toDeal}`
-      button.addEventListener('click', _ => {
-        socket.emit(`deal${di.toDeal.split(' ').map(s => s[0].toUpperCase() + s.slice(1)).join('')}`, config.id)
-      })
     }
     if (phases[di.phase] === 'DEAL') {
       ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
@@ -290,63 +294,33 @@ socket.on('activeGames', (configs, data) => {
       }
     }
     if (phases[di.phase] === 'PLAY') {
-      if (di.selectDealer) {
-        const drawn = di.cards.map((card, seat) => ({[seat]: cardChar(card - 1)}))
-        ul.appendChild(document.createElement('li')).innerText = `Drawn cards: ${JSON.stringify(drawn)}`
-        const button = li.appendChild(document.createElement('input'))
-        button.type = 'button'
-        button.value = 'Select dealer'
-        button.addEventListener('click', _ => {
-          socket.emit('selectDealer', config.id)
+      if (di.actionIndex == di.seatIndex) {
+        const fold = li.appendChild(document.createElement('input'))
+        fold.type = 'button'
+        fold.value = 'Fold'
+        fold.addEventListener('click', _ => {
+          socket.emit('fold', config.id, di.seatIndex)
         })
-      }
-      else {
-        ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
-        ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
-        ul.appendChild(document.createElement('li')).innerText = `Board: ${di.board.map(card => cardChar(card - 1)).join()}`
-        ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
-        const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
-        ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
-        const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
-        ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
-        ul.appendChild(document.createElement('li')).innerText = `Bet: ${di.bet[di.betIndex]}`
-        ul.appendChild(document.createElement('li')).innerText = `Pots: ${JSON.stringify(di.pot)}`
-        if (di.postBlinds) {
-          const button = li.appendChild(document.createElement('input'))
-          button.type = 'button'
-          button.value = 'Post blinds'
-          button.addEventListener('click', _ => {
-            socket.emit('postBlinds', config.id)
-          })
-        }
-        else if (di.actionIndex == di.seatIndex) {
-          const fold = li.appendChild(document.createElement('input'))
-          fold.type = 'button'
-          fold.value = 'Fold'
-          fold.addEventListener('click', _ => {
-            socket.emit('fold', config.id, di.seatIndex)
-          })
-          const call = li.appendChild(document.createElement('input'))
-          call.type = 'button'
-          call.value = 'Call'
-          call.addEventListener('click', _ => {
-            socket.emit('call', config.id, di.seatIndex)
-          })
-          const amount = li.appendChild(document.createElement('input'))
-          amount.inputmode = 'decimal'
-          amount.pattern = "^([1-9]\\d*)|(\\d*\\.\\d+)$"
-          amount.value = di.minRaise
-          amount.classList.add('amount', 'justifyRight')
-          const bet = li.appendChild(document.createElement('input'))
-          bet.type = 'button'
-          bet.value = 'Raise'
-          bet.addEventListener('click', _ => {
-            if (amount.checkValidity())
-              socket.emit('raise', config.id, di.seatIndex, amount.value, di.bet[di.seatIndex])
-            else
-              amount.reportValidity()
-          })
-        }
+        const call = li.appendChild(document.createElement('input'))
+        call.type = 'button'
+        call.value = 'Call'
+        call.addEventListener('click', _ => {
+          socket.emit('call', config.id, di.seatIndex)
+        })
+        const amount = li.appendChild(document.createElement('input'))
+        amount.inputmode = 'decimal'
+        amount.pattern = "^([1-9]\\d*)|(\\d*\\.\\d+)$"
+        amount.value = di.minRaise
+        amount.classList.add('amount', 'justifyRight')
+        const bet = li.appendChild(document.createElement('input'))
+        bet.type = 'button'
+        bet.value = 'Raise'
+        bet.addEventListener('click', _ => {
+          if (amount.checkValidity())
+            socket.emit('raise', config.id, di.seatIndex, amount.value, di.bet[di.seatIndex])
+          else
+            amount.reportValidity()
+        })
       }
     }
     setTimeout(() => socket.emit('requestLogCount', config.id), 100)

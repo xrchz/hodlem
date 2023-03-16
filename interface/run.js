@@ -210,12 +210,21 @@ async function refreshActiveGames(socket) {
     }
   }))
   for (const [id, data] of Object.entries(socket.activeGames)) {
-    console.log(`processing ${id}`)
     const config = socket.gameConfigs[id]
     const deckId = config.deckId
     const numPlayers = config.formatted.startsWith
     ;[data.phase, data.commitBlock] = (await room.phaseCommit(id)).map(i => i.toNumber())
-    delete data.toDeal
+    const gameData = await game.games(id)
+    data.board = gameData.board.flatMap(i => i.isZero() ? [] : [i.toNumber()])
+    data.hand = []
+    data.stack = gameData.stack.slice(0, numPlayers).map(s => ethers.utils.formatEther(s))
+    data.bet = gameData.bet.slice(0, numPlayers).map(b => ethers.utils.formatEther(b))
+    data.betIndex = gameData.betIndex.toNumber()
+    data.pot = gameData.pot.slice(0, numPlayers).flatMap(p => p.isZero() ? [] : [ethers.utils.formatEther(p)])
+    if (!data.pot.length) data.pot.push(0)
+    data.actionIndex = gameData.actionIndex.toNumber()
+    data.minRaise = ethers.utils.formatEther(gameData.minRaise)
+    data.dealer = gameData.dealer.toNumber()
     if (data.phase === Phase_PREP) {
       delete data.reveal
       data.waitingOn = []
@@ -239,9 +248,6 @@ async function refreshActiveGames(socket) {
             data.waitingOn.push(seatIndex)
           }
           shuffled = shuffled.div(2)
-        }
-        if (!(shuffled.isZero())) {
-          data.toDeal = ((await game.games(id)).startBlock.isZero()) ? 'high card' : 'hole cards'
         }
       }
     }
@@ -267,30 +273,12 @@ async function refreshActiveGames(socket) {
       }
     }
     if (data.phase === Phase_PLAY) {
-      const gameData = await game.games(id)
-      delete data.selectDealer
-      if (gameData.startBlock.isZero()) {
-        data.cards = []
-        for (const seatIndex of Array(numPlayers).keys()) {
-          data.cards.push((await deck.openedCard(deckId, seatIndex)).toNumber())
-        }
-        data.selectDealer = true
-      }
-      else {
-        data.board = gameData.board.flatMap(i => i.isZero() ? [] : [i.toNumber()])
-        data.hand = []
-        for (const idx of gameData.hands[data.seatIndex])
-          data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
-        data.stack = gameData.stack.slice(0, numPlayers).map(s => ethers.utils.formatEther(s))
-        data.bet = gameData.bet.slice(0, numPlayers).map(b => ethers.utils.formatEther(b))
-        data.betIndex = gameData.betIndex.toNumber()
-        data.pot = gameData.pot.slice(0, numPlayers).flatMap(p => p.isZero() ? [] : [ethers.utils.formatEther(p)])
-        if (!data.pot.length) data.pot.push(0)
-        data.actionIndex = gameData.actionIndex.toNumber()
-        data.minRaise = ethers.utils.formatEther(gameData.minRaise)
-        data.dealer = gameData.dealer.toNumber()
-        data.postBlinds = gameData.board[0].isZero() && gameData.actionBlock.isZero()
-      }
+      for (const idx of gameData.hands[data.seatIndex])
+        data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
+    }
+    if (data.phase === Phase_SHOW) {
+      for (const idx of gameData.hands[data.seatIndex])
+        data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
     }
   }
   socket.emit('activeGames',
@@ -706,7 +694,7 @@ io.on('connection', async socket => {
       socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
         .createTable(
-          seatIndex, config, deck.address, {
+          seatIndex, config, game.address, {
             value: config.buyIn.add(config.bond),
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
@@ -840,14 +828,6 @@ io.on('connection', async socket => {
   })
 
   socket.on('endDeal', simpleTxn(socket, game, 'endDeal'))
-
-  socket.on('dealHighCard', simpleTxn(socket, game, 'dealHighCard'))
-
-  socket.on('selectDealer', simpleTxn(socket, game, 'selectDealer'))
-
-  socket.on('dealHoleCards', simpleTxn(socket, game, 'dealHoleCards'))
-
-  socket.on('postBlinds', simpleTxn(socket, game, 'postBlinds'))
 
   socket.on('fold', simpleTxn(socket, game, 'fold'))
 

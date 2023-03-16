@@ -30,7 +30,6 @@ MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament structure
 
 struct Config:
-  gameAddress: address             # address of game manager
   buyIn:       uint256             # entry ticket price per player
   bond:        uint256             # liveness bond for each player
   startsWith:  uint256             # game can start when this many players are seated
@@ -80,16 +79,17 @@ games: public(HashMap[uint256, Game])
 
 PENDING_REVEAL: constant(uint256) = 53
 
-@internal
-def afterShuffle(_numPlayers: uint256, _tableId: uint256) -> bool:
-  return (T.authorised(_tableId, Phase_SHUF) and
-          shift(T.shuffled(_tableId), -convert(_numPlayers, int128)) != 0)
-
 @external
+def afterShuffle(_tableId: uint256):
+  assert T.address == msg.sender, "unauthorised"
+  if self.games[_tableId].startBlock == empty(uint256):
+    self.dealHighCard(_tableId)
+  else:
+    self.dealHoleCards(_tableId)
+
+@internal
 def dealHighCard(_tableId: uint256):
   numPlayers: uint256 = T.numPlayers(_tableId)
-  assert (self.afterShuffle(numPlayers, _tableId) and
-          self.games[_tableId].startBlock == empty(uint256)), "wrong phase"
   for seatIndex in range(MAX_SEATS):
     if seatIndex == numPlayers: break
     T.showCard(_tableId, T.dealTo(_tableId, seatIndex))
@@ -99,11 +99,9 @@ event DealRound:
   table: indexed(uint256)
   street: indexed(uint256)
 
-@external
+@internal
 def dealHoleCards(_tableId: uint256):
   numPlayers: uint256 = T.numPlayers(_tableId)
-  assert (self.afterShuffle(numPlayers, _tableId) and
-          self.games[_tableId].startBlock != empty(uint256)), "wrong phase"
   log DealRound(_tableId, 1)
   dealer: uint256 = self.games[_tableId].dealer
   seatIndex: uint256 = dealer
@@ -119,10 +117,8 @@ event SelectDealer:
   table: indexed(uint256)
   seat: indexed(uint256)
 
-@external
+@internal
 def selectDealer(_tableId: uint256):
-  assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
-  assert self.games[_tableId].startBlock == empty(uint256), "already started"
   numPlayers: uint256 = T.numPlayers(_tableId)
   highestRank: uint256 = empty(uint256)
   highestSuit: uint256 = empty(uint256)
@@ -151,7 +147,7 @@ event PostBlind:
   bet: uint256
   placed: uint256
 
-@external
+@internal
 def postBlinds(_tableId: uint256):
   assert T.authorised(_tableId, Phase_PLAY), "unauthorised"
   assert self.games[_tableId].startBlock != empty(uint256), "not started"
@@ -182,7 +178,7 @@ def validateTurn(_tableId: uint256, _seatIndex: uint256, _phase: uint256 = Phase
 @internal
 def removeFromPots(_tableId: uint256, _seatIndex: uint256):
   self.games[_tableId].liveUntil[_seatIndex] = 0
-  assert self.games[_tableId].numInHand != 0, "TODO: internal consistency check 0"
+  assert self.games[_tableId].numInHand != 0, "TODO: internal consistency check removeFromPots"
   self.games[_tableId].numInHand = unsafe_sub(
     self.games[_tableId].numInHand, 1)
 
@@ -256,24 +252,36 @@ def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
 @external
 def endDeal(_tableId: uint256):
   T.endDeal(_tableId)
-  # fill the board with the revealedCards
-  boardIndex: uint256 = 5
-  cardIndex: uint256 = T.deckIndex(_tableId)
-  for _ in range(5):
-    boardIndex -= 1
-    if self.games[_tableId].board[boardIndex] == empty(uint256):
-      continue
-    elif self.games[_tableId].board[boardIndex] == PENDING_REVEAL:
-      cardIndex -= 1
-      self.games[_tableId].board[boardIndex] = T.cardAt(_tableId, cardIndex)
+  if T.authorised(_tableId, Phase_PLAY):
+    if self.games[_tableId].startBlock == empty(uint256):
+      self.selectDealer(_tableId)
+    elif self.games[_tableId].board[0] == empty(uint256):
+      if self.games[_tableId].actionBlock == empty(uint256):
+        self.postBlinds(_tableId)
+      else:
+        raise "internal consistency failure endDeal 1"
     else:
-      break
-  # restart act timer
-  if self.games[_tableId].actionBlock != empty(uint256):
-    self.games[_tableId].actionBlock = block.number
-  elif self.games[_tableId].board[4] != empty(uint256):
-    # skip to showdown when all players are all-in
-    self.afterAct(_tableId, self.games[_tableId].dealer)
+      # fill the board with the revealedCards
+      boardIndex: uint256 = 5
+      cardIndex: uint256 = T.deckIndex(_tableId)
+      for _ in range(5):
+        boardIndex = unsafe_sub(boardIndex, 1)
+        if self.games[_tableId].board[boardIndex] == empty(uint256):
+          continue
+        elif self.games[_tableId].board[boardIndex] == PENDING_REVEAL:
+          cardIndex = unsafe_sub(cardIndex, 1)
+          self.games[_tableId].board[boardIndex] = T.cardAt(_tableId, cardIndex)
+        else:
+          break
+      if self.games[_tableId].actionBlock == empty(uint256):
+          # skip to showdown when all players are all-in
+          self.afterAct(_tableId, self.games[_tableId].dealer)
+      else:
+        self.games[_tableId].actionBlock = block.number
+  elif T.authorised(_tableId, Phase_SHOW):
+    self.afterShow(_tableId)
+  else:
+    raise "internal consistency failure endDeal 2"
 
 event Timeout:
   table: indexed(uint256)
@@ -302,14 +310,11 @@ def foldCards(_tableId: uint256, _seatIndex: uint256):
   self.validateTurn(_tableId, _seatIndex, Phase_SHOW)
   self.removeFromPots(_tableId, _seatIndex)
   log Fold(_tableId, _seatIndex)
+  self.afterShow(_tableId)
 
-@external
-def endShow(_tableId: uint256):
-  assert T.authorised(_tableId, Phase_SHOW)
+@internal
+def afterShow(_tableId: uint256):
   seatIndex: uint256 = self.games[_tableId].actionIndex
-  assert (self.games[_tableId].liveUntil[seatIndex] == 0 or
-    (T.cardAt(_tableId, self.games[_tableId].hands[seatIndex][0]) != empty(uint256) and
-     T.cardAt(_tableId, self.games[_tableId].hands[seatIndex][1]) != empty(uint256))), "action required"
   numPlayers: uint256 = T.numPlayers(_tableId)
   stopIndex: uint256 = self.games[_tableId].stopIndex
   self.games[_tableId].actionIndex = self.nextInPot(numPlayers, _tableId, seatIndex, stopIndex)
@@ -328,7 +333,7 @@ def endShow(_tableId: uint256):
         break
       if self.games[_tableId].liveUntil[contestantIndex] <= potIndex:
         continue
-      assert self.games[_tableId].liveUntil[contestantIndex] == unsafe_add(potIndex, 1), "TODO: internal consistency check 1"
+      assert self.games[_tableId].liveUntil[contestantIndex] == unsafe_add(potIndex, 1), "TODO: internal consistency check afterShow"
       self.games[_tableId].liveUntil[contestantIndex] = potIndex
       hand[5] = T.cardAt(_tableId, self.games[_tableId].hands[contestantIndex][0])
       hand[6] = T.cardAt(_tableId, self.games[_tableId].hands[contestantIndex][1])
@@ -402,7 +407,7 @@ def potSize(_numPlayers: uint256, _tableId: uint256, _potIndex: uint256) -> uint
       break
     if self.games[_tableId].liveUntil[seatIndex] == liveUntil:
       minBet = min(minBet, self.games[_tableId].bet[seatIndex])
-  assert minBet < max_value(uint256), "TODO: internal consistency check 2"
+  assert minBet < max_value(uint256), "TODO: internal consistency check potSize"
   return minBet
 
 @internal

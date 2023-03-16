@@ -22,6 +22,8 @@ struct CP:
 
 import Deck as DeckManager
 
+D: immutable(DeckManager)
+
 MAX_SEATS:  constant(uint256) =   9 # maximum seats per table
 MAX_LEVELS: constant(uint256) = 100 # maximum number of levels in tournament structure
 
@@ -38,8 +40,10 @@ Phase_DEAL: constant(uint256) = 4 # drawing and possibly opening cards as curren
 Phase_PLAY: constant(uint256) = 5 # betting; new card revelations may become required
 Phase_SHOW: constant(uint256) = 6 # showdown; new card revelations may become required
 
+interface GameManager:
+  def afterShuffle(_tableId: uint256): nonpayable
+
 struct Config:
-  gameAddress: address             # address of game manager
   buyIn:       uint256             # entry ticket price per player
   bond:        uint256             # liveness bond for each player
   startsWith:  uint256             # game can start when this many players are seated
@@ -56,7 +60,7 @@ struct Config:
 struct Table:
   config:      Config
   seats:       address[9]           # playerIds in seats as at the start of the game
-  deck:        DeckManager          # deck contract
+  game:        GameManager          # game contract
   deckId:      uint256              # id of deck in deck contract
   phase:       uint256
   nextPhase:   uint256              # phase to enter after deal
@@ -77,7 +81,8 @@ nextLiveTable: public(HashMap[address, HashMap[uint256, uint256]])
 prevLiveTable: public(HashMap[address, HashMap[uint256, uint256]])
 
 @external
-def __init__():
+def __init__(_deckAddr: address):
+  D = DeckManager(_deckAddr)
   self.nextTableId = 1
 
 @internal
@@ -142,7 +147,7 @@ def validatePhase(_tableId: uint256, _phase: uint256):
 @internal
 @view
 def gameAuth(_tableId: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  assert self.tables[_tableId].game.address == msg.sender, "unauthorised"
 
 @internal
 @view
@@ -151,7 +156,7 @@ def checkAuth(_tableId: uint256, _seatIndex: uint256):
 
 @external
 @payable
-def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uint256:
+def createTable(_seatIndex: uint256, _config: Config, _gameAddr: address) -> uint256:
   assert 1 < _config.startsWith and _config.startsWith <= MAX_SEATS, "invalid startsWith"
   assert 0 < _config.untilLeft and _config.untilLeft < _config.startsWith, "invalid untilLeft"
   assert 0 < len(_config.structure) and self.ascending(_config.structure), "invalid structure"
@@ -160,8 +165,8 @@ def createTable(_seatIndex: uint256, _config: Config, _deckAddr: address) -> uin
   assert _config.startsWith * (_config.bond + _config.buyIn) <= max_value(uint256), "amounts too large"
   assert msg.value == unsafe_add(_config.bond, _config.buyIn), "incorrect bond + buyIn"
   tableId: uint256 = self.nextTableId
-  self.tables[tableId].deck = DeckManager(_deckAddr)
-  self.tables[tableId].deckId = self.tables[tableId].deck.newDeck(_config.startsWith)
+  self.tables[tableId].game = GameManager(_gameAddr)
+  self.tables[tableId].deckId = D.newDeck(_config.startsWith)
   self.tables[tableId].phase = Phase_JOIN
   self.tables[tableId].config = _config
   self.tables[tableId].seats[_seatIndex] = msg.sender
@@ -220,7 +225,7 @@ def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
 
 @external
 def deleteTable(_tableId: uint256):
-  assert self.tables[_tableId].config.gameAddress == msg.sender, "unauthorised"
+  assert self.tables[_tableId].game.address == msg.sender, "unauthorised"
   self.tables[_tableId] = empty(Table)
   log EndGame(_tableId)
 
@@ -241,8 +246,7 @@ def checkDeadline(_tableId: uint256, _blocks: uint256):
 def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_PREP)
   self.checkDeadline(_tableId, self.tables[_tableId].config.prepBlocks)
-  assert not self.tables[_tableId].deck.hasSubmittedPrep(
-    self.tables[_tableId].deckId, _seatIndex), "already submitted"
+  assert not D.hasSubmittedPrep(self.tables[_tableId].deckId, _seatIndex), "already submitted"
   self.failChallenge(_tableId, _seatIndex, 0)
 
 @external
@@ -257,8 +261,7 @@ def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_SHUF)
   self.checkDeadline(_tableId, self.tables[_tableId].config.verifBlocks)
   assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
-  assert not self.tables[_tableId].deck.challengeActive(
-    self.tables[_tableId].deckId, _seatIndex), "already verified"
+  assert not D.challengeActive(self.tables[_tableId].deckId, _seatIndex), "already verified"
   self.failChallenge(_tableId, _seatIndex, 2)
 
 @external
@@ -275,8 +278,7 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
   self.checkDeadline(_tableId, self.tables[_tableId].config.dealBlocks)
   assert self.tables[_tableId].drawIndex[_cardIndex] == _seatIndex, "wrong player"
   assert self.tables[_tableId].requirement[_cardIndex] == Req_SHOW, "not required"
-  assert self.tables[_tableId].deck.openedCard(
-    self.tables[_tableId].deckId, _cardIndex) == 0, "already opened"
+  assert D.openedCard(self.tables[_tableId].deckId, _cardIndex) == 0, "already opened"
   self.failChallenge(_tableId, _seatIndex, 4)
 
 @internal
@@ -311,20 +313,20 @@ event DeckPrep:
 def submitPrep(_tableId: uint256, _seatIndex: uint256, _hash: bytes32):
   self.validatePhase(_tableId, Phase_PREP)
   self.checkAuth(_tableId, _seatIndex)
-  self.tables[_tableId].deck.submitPrep(self.tables[_tableId].deckId, _seatIndex, _hash)
+  D.submitPrep(self.tables[_tableId].deckId, _seatIndex, _hash)
   log DeckPrep(_tableId, msg.sender, 0)
 
 @external
 def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]):
   self.validatePhase(_tableId, Phase_PREP)
   self.checkAuth(_tableId, _seatIndex)
-  self.tables[_tableId].deck.verifyPrep(self.tables[_tableId].deckId, _seatIndex, _prep)
+  D.verifyPrep(self.tables[_tableId].deckId, _seatIndex, _prep)
   log DeckPrep(_tableId, msg.sender, 1)
 
 @external
 def finishPrep(_tableId: uint256):
   self.validatePhase(_tableId, Phase_PREP)
-  self.tables[_tableId].deck.finishPrep(self.tables[_tableId].deckId)
+  D.finishPrep(self.tables[_tableId].deckId)
   for seatIndex in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith: break
     self.tables[_tableId].drawIndex[seatIndex] = seatIndex
@@ -344,7 +346,7 @@ event Shuffle:
 @internal
 @view
 def shuffleCount(_tableId: uint256) -> uint256:
-  return self.tables[_tableId].deck.shuffleCount(self.tables[_tableId].deckId)
+  return D.shuffleCount(self.tables[_tableId].deckId)
 
 @external
 def submitShuffle(_tableId: uint256, _seatIndex: uint256,
@@ -353,11 +355,11 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
   self.checkAuth(_tableId, _seatIndex)
   deckId: uint256 = self.tables[_tableId].deckId
   self.tables[_tableId].commitBlock = block.number
-  self.tables[_tableId].deck.submitShuffle(deckId, _seatIndex, _shuffle)
-  self.tables[_tableId].deck.challenge(deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
+  D.submitShuffle(deckId, _seatIndex, _shuffle)
+  D.challenge(deckId, _seatIndex, self.tables[_tableId].config.verifRounds)
   log Shuffle(_tableId, msg.sender, 0)
   self.autoShuffle(_tableId)
-  return self.tables[_tableId].deck.respondChallenge(deckId, _seatIndex, _hash)
+  return D.respondChallenge(deckId, _seatIndex, _hash)
 
 @external
 def submitVerif(_tableId: uint256, _seatIndex: uint256,
@@ -371,7 +373,7 @@ def submitVerif(_tableId: uint256, _seatIndex: uint256,
   self.tables[_tableId].shuffled ^= bit
   for i in range(MAX_SECURITY):
     if i == self.tables[_tableId].config.verifRounds: break
-    self.tables[_tableId].deck.defuseNextChallenge(
+    D.defuseNextChallenge(
       self.tables[_tableId].deckId, _seatIndex,
       _commitments[i], _scalars[i], _permutations[i])
   log Shuffle(_tableId, msg.sender, 1)
@@ -388,8 +390,7 @@ def autoShuffle(_tableId: uint256):
     if self.tables[_tableId].present & shift(1, seatIndex) == 0:
       # just copy the shuffle: use identity permutation and secret key = 1
       # do not challenge it; external challenges can just be ignored
-      self.tables[_tableId].deck.submitShuffle(
-        deckId, seatIndex, self.tables[_tableId].deck.lastShuffle(deckId))
+      D.submitShuffle(deckId, seatIndex, D.lastShuffle(deckId))
       seatIndex = unsafe_add(seatIndex, 1)
     else:
       self.tables[_tableId].commitBlock = block.number
@@ -402,20 +403,21 @@ def autoVerif(_tableId: uint256):
   for _ in range(MAX_SEATS):
     if cur == end:
       self.tables[_tableId].shuffled |= cur
-      log Shuffle(_tableId, msg.sender, 2)
-      break
+      self.tables[_tableId].game.afterShuffle(_tableId)
+      return
     if self.tables[_tableId].shuffled & cur == 0:
       if self.tables[_tableId].present & cur == 0:
         self.tables[_tableId].shuffled |= cur
       else:
-        break
+        self.tables[_tableId].commitBlock = block.number
+        return
     cur = shift(cur, 1)
-  self.tables[_tableId].commitBlock = block.number
+  raise "autoVerif"
 
 @external
 def reshuffle(_tableId: uint256):
   self.gameAuth(_tableId)
-  self.tables[_tableId].deck.resetShuffle(self.tables[_tableId].deckId)
+  D.resetShuffle(self.tables[_tableId].deckId)
   self.tables[_tableId].shuffled = 0
   self.tables[_tableId].requirement = empty(uint256[26])
   self.tables[_tableId].deckIndex = 0
@@ -443,7 +445,7 @@ event Show:
 @internal
 @view
 def decryptCount(_tableId: uint256, _cardIndex: uint256) -> uint256:
-  return self.tables[_tableId].deck.decryptCount(self.tables[_tableId].deckId, _cardIndex)
+  return D.decryptCount(self.tables[_tableId].deckId, _cardIndex)
 
 @internal
 def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
@@ -453,9 +455,8 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
     if self.tables[_tableId].present & shift(1, seatIndex) == 0:
-      card: uint256[2] = self.tables[_tableId].deck.lastDecrypt(deckId, _cardIndex)
-      self.tables[_tableId].deck.decryptCard(deckId, seatIndex, _cardIndex, card,
-        self.tables[_tableId].deck.emptyProof(card))
+      card: uint256[2] = D.lastDecrypt(deckId, _cardIndex)
+      D.decryptCard(deckId, seatIndex, _cardIndex, card, D.emptyProof(card))
       seatIndex = unsafe_add(seatIndex, 1)
     else:
       break
@@ -468,7 +469,7 @@ def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256
   for data in _data:
     cardIndex: uint256 = data[0]
     assert self.tables[_tableId].requirement[cardIndex] != Req_DECK, "decrypt not allowed"
-    self.tables[_tableId].deck.decryptCard(
+    D.decryptCard(
       self.tables[_tableId].deckId, _seatIndex, cardIndex, [data[1], data[2]],
       Proof({gs: [data[3], data[4]], hs: [data[5], data[6]], scx: data[7]}))
     self.autoDecrypt(_tableId, cardIndex)
@@ -482,7 +483,7 @@ def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[
     cardIndex: uint256 = data[0]
     assert self.tables[_tableId].drawIndex[cardIndex] == _seatIndex, "wrong player"
     assert self.tables[_tableId].requirement[cardIndex] == Req_SHOW, "reveal not allowed"
-    self.tables[_tableId].deck.openCard(
+    D.openCard(
       self.tables[_tableId].deckId, _seatIndex, cardIndex, data[1],
       Proof({gs: [data[2], data[3]], hs: [data[4], data[5]], scx: data[6]}))
     log Show(_tableId, msg.sender, cardIndex, data[1])
@@ -492,8 +493,7 @@ def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[
 def checkRevelations(_tableId: uint256) -> bool:
   for cardIndex in range(26):
     if (self.tables[_tableId].requirement[cardIndex] == Req_SHOW and
-        self.tables[_tableId].deck.openedCard(
-          self.tables[_tableId].deckId, cardIndex) == 0):
+        D.openedCard(self.tables[_tableId].deckId, cardIndex) == 0):
       return False
     if (self.tables[_tableId].requirement[cardIndex] != Req_DECK and
         self.decryptCount(_tableId, cardIndex) <=
@@ -521,8 +521,7 @@ def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256:
   deckIndex: uint256 = self.tables[_tableId].deckIndex
   self.tables[_tableId].drawIndex[deckIndex] = _seatIndex
   self.tables[_tableId].requirement[deckIndex] = Req_HAND
-  self.tables[_tableId].deck.drawCard(
-    self.tables[_tableId].deckId, _seatIndex, deckIndex)
+  D.drawCard(self.tables[_tableId].deckId, _seatIndex, deckIndex)
   self.tables[_tableId].deckIndex = unsafe_add(deckIndex, 1)
   return deckIndex
 
@@ -557,8 +556,7 @@ def authorised(_tableId: uint256, _phase: uint256,
 @internal
 @view
 def _cardAt(_tableId: uint256, _deckIndex: uint256) -> uint256:
-  return self.tables[_tableId].deck.openedCard(
-    self.tables[_tableId].deckId, _deckIndex)
+  return D.openedCard(self.tables[_tableId].deckId, _deckIndex)
 
 @external
 @view

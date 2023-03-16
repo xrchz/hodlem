@@ -1,9 +1,11 @@
 from brownie import accounts, Deck, Room, Game
 
+fee_args = {"max_fee": "16 gwei", "priority_fee": "2 gwei"}
+
 def deploy():
-    kwargs = {"from": accounts[0], "max_fee": "16 gwei", "priority_fee": "2 gwei"}
+    kwargs = {"from": accounts[0], **fee_args}
     deck = Deck.deploy(kwargs)
-    room = Room.deploy(kwargs)
+    room = Room.deploy(deck.address, kwargs)
     game = Game.deploy(room.address, kwargs)
 
 def main():
