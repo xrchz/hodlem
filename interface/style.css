@@ -23,10 +23,19 @@ body {
   text-align: right;
 }
 
+dl + input[type="button"] {
+  margin: auto;
+  display: block;
+}
+
 dl {
   display: flex;
   flex-flow: column wrap;
   max-height: 10em;
+  max-width: 40em;
+  margin: auto;
+  border-style: solid;
+  border-color: slategrey;
 }
 dt {
   font-weight: bold;
@@ -37,16 +46,30 @@ dd {
 
 ul {
   list-style-type: none;
+  padding: 0;
+}
+
+ul.game {
+  padding: 1em;
+  max-width: 40em;
+  margin: auto;
 }
 
 ul.logs {
   max-height: 10em;
+  max-width: 40em;
   margin: auto;
+  padding-left: 0.5em;
   background-color: black;
   color: white;
   border-style: solid;
   border-color: oldlace;
   overflow: auto;
+}
+
+ul.log > li {
+  display: inline-block;
+  margin-left: 0.5em;
 }
 
 .amountGwei {

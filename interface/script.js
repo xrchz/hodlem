@@ -157,9 +157,23 @@ socket.on('logs', (id, newLogs) => {
     }
     if (typeof(log.args[0]) === 'string' && log.args[0].startsWith('0x') &&
         log.name !== 'JoinTable') {
-      log.args[0] = addressToSeat[id][log.args[0]]
+      const span = document.createElement('span')
+      span.innerText = addressToSeat[id][log.args[0]]
+      span.title = log.args[0]
+      log.args[0] = span
     }
-    li.innerText = `${log.name}(${log.args.join()})`
+    const ul = li.appendChild(document.createElement('ul'))
+    ul.classList.add('log')
+    const name = ul.appendChild(document.createElement('li'))
+    name.classList.add('name')
+    name.innerText = log.name
+    log.args.forEach(arg => {
+      const li = ul.appendChild(document.createElement('li'))
+      if (arg instanceof Element)
+        li.appendChild(arg)
+      else
+        li.innerText = arg
+    })
     return li
   }))
   logsList.replaceChildren()
@@ -212,6 +226,7 @@ socket.on('activeGames', (configs, data) => {
     const li = fragment.appendChild(document.createElement('li'))
     const configDiv = li.appendChild(document.createElement('dl'))
     Object.entries(config).forEach(([k, v]) => {
+      if (['deckId', 'id'].includes(k)) return
       configDiv.appendChild(document.createElement('dt')).innerText = k
       configDiv.appendChild(document.createElement('dd')).innerText = v
     })
@@ -232,6 +247,7 @@ socket.on('activeGames', (configs, data) => {
     logsUl.id = `logs${config.id}`
     logsUl.classList.add('logs')
     const ul = li.appendChild(document.createElement('ul'))
+    ul.classList.add('game')
     ul.appendChild(document.createElement('li')).innerText = `Your seat: ${di.seatIndex}`
     ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[di.phase]}`
     if (phases[di.phase] === 'PREP') {
