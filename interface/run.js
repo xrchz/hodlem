@@ -723,8 +723,6 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('startGame', simpleTxn(socket, room, 'startGame'))
-
   socket.on('submitPrep', async (tableId, seatIndex) => {
     try {
       const hash = await prepareDeck(socket, tableId)
@@ -756,10 +754,6 @@ io.on('connection', async socket => {
       socket.emit('errorMsg', e.toString())
     }
   })
-
-  socket.on('finishSubmit', simpleTxn(socket, deck, 'finishSubmit'))
-
-  socket.on('finishPrep', simpleTxn(socket, room, 'finishPrep'))
 
   socket.on('submitShuffle', async tableId => {
     try {

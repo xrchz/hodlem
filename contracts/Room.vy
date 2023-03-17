@@ -172,6 +172,7 @@ def createTable(_seatIndex: uint256, _config: Config, _gameAddr: address) -> uin
   self.tables[tableId].seats[_seatIndex] = msg.sender
   self.nextTableId = unsafe_add(tableId, 1)
   self.playerJoinWaiting(tableId, _seatIndex)
+  self.tables[tableId].present = 1
   return tableId
 
 @external
@@ -188,6 +189,22 @@ def joinTable(_tableId: uint256, _seatIndex: uint256):
     self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn), "incorrect bond + buyIn"
   self.tables[_tableId].seats[_seatIndex] = msg.sender
   self.playerJoinWaiting(_tableId, _seatIndex)
+  numJoined: uint256 = unsafe_add(self.tables[_tableId].present, 1)
+  self.tables[_tableId].present = numJoined
+  if numJoined == numPlayers:
+    self.tables[_tableId].present = 0
+    for seatIndex in range(MAX_SEATS):
+      if seatIndex == numPlayers: break
+      player: address = self.tables[_tableId].seats[seatIndex]
+      self.tables[_tableId].present |= shift(1, seatIndex)
+      self.nextLiveTable[player][_tableId] = self.nextLiveTable[player][0]
+      self.nextLiveTable[player][0] = _tableId
+      self.prevLiveTable[player][_tableId] = 0
+      self.prevLiveTable[player][self.nextLiveTable[player][_tableId]] = _tableId
+    self.playerLeaveWaiting(_tableId, numPlayers)
+    self.tables[_tableId].phase = Phase_PREP
+    self.tables[_tableId].commitBlock = block.number
+    log StartGame(_tableId)
 
 @external
 def leaveTable(_tableId: uint256, _seatIndex: uint256):
@@ -196,25 +213,8 @@ def leaveTable(_tableId: uint256, _seatIndex: uint256):
   self.tables[_tableId].seats[_seatIndex] = empty(address)
   self.forceSend(msg.sender, unsafe_add(self.tables[_tableId].config.bond, self.tables[_tableId].config.buyIn))
   self.playerLeaveWaiting(_tableId, 1)
+  self.tables[_tableId].present = unsafe_sub(self.tables[_tableId].present, 1)
   log LeaveTable(_tableId, msg.sender)
-
-@external
-def startGame(_tableId: uint256):
-  self.validatePhase(_tableId, Phase_JOIN)
-  numPlayers: uint256 = self.tables[_tableId].config.startsWith
-  for seatIndex in range(MAX_SEATS):
-    if seatIndex == numPlayers: break
-    player: address = self.tables[_tableId].seats[seatIndex]
-    assert player != empty(address), "not enough players"
-    self.tables[_tableId].present |= shift(1, seatIndex)
-    self.nextLiveTable[player][_tableId] = self.nextLiveTable[player][0]
-    self.nextLiveTable[player][0] = _tableId
-    self.prevLiveTable[player][_tableId] = 0
-    self.prevLiveTable[player][self.nextLiveTable[player][_tableId]] = _tableId
-  self.playerLeaveWaiting(_tableId, numPlayers)
-  self.tables[_tableId].phase = Phase_PREP
-  self.tables[_tableId].commitBlock = block.number
-  log StartGame(_tableId)
 
 @external
 def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
@@ -225,7 +225,7 @@ def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
 
 @external
 def deleteTable(_tableId: uint256):
-  assert self.tables[_tableId].game.address == msg.sender, "unauthorised"
+  self.gameAuth(_tableId)
   self.tables[_tableId] = empty(Table)
   log EndGame(_tableId)
 
