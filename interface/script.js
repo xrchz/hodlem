@@ -1,5 +1,7 @@
 const socket = io()
 
+const fragment = document.createDocumentFragment()
+
 const errorMsg = document.getElementById('errorMsg')
 const errorMsgText = errorMsg.getElementsByTagName('span')[0]
 const clearErrorMsgButton = errorMsg.getElementsByTagName('input')[0]
@@ -127,6 +129,15 @@ rejectTxnButton.addEventListener('click', (e) => {
 
 const emptyAddress = '0x0000000000000000000000000000000000000000'
 
+function cardChar(card) {
+  if (card === 52) return '🂠'
+  let codepoint = 0x1F000
+  codepoint += 0xA0 + 16 * Math.floor(card / 13)
+  const rank = card % 13
+  codepoint += rank === 12 ? 1 : rank + 2 + (9 < rank)
+  return String.fromCodePoint(codepoint)
+}
+
 const logs = {}
 
 socket.on('logCount', (id, count) => {
@@ -137,13 +148,18 @@ socket.on('logCount', (id, count) => {
 socket.on('logs', (id, newLogs) => {
   logs[id].push(...newLogs)
   const logsList = document.getElementById(`logs${id}`)
-  logsList.replaceChildren(
-    ...logs[id].map(log => {
-      const li = document.createElement('li')
-      li.innerText = log
-      return li
-    })
-  )
+  fragment.append(...logs[id].map(log => {
+    const li = document.createElement('li')
+    if (log.startsWith('Show')) {
+      const i = log.lastIndexOf(',') + 1
+      const card = parseInt(log.substring(i, log.lastIndexOf(')')))
+      log = log.substring(0, i).concat(cardChar(card), ')')
+    }
+    li.innerText = log
+    return li
+  }))
+  logsList.replaceChildren()
+  logsList.appendChild(fragment)
   logsList.lastElementChild.scrollIntoView(false)
 })
 
@@ -151,7 +167,7 @@ socket.on('pendingGames', (configs, seats) => {
   joinDiv.replaceChildren()
   configs.forEach(config => {
     if (!(config.id in logs)) logs[config.id] = []
-    const li = joinDiv.appendChild(document.createElement('li'))
+    const li = fragment.appendChild(document.createElement('li'))
     li.appendChild(document.createElement('ul')).id = `logs${config.id}`
     li.firstElementChild.classList.add('logs')
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
@@ -172,24 +188,17 @@ socket.on('pendingGames', (configs, seats) => {
     })
     setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
+  joinDiv.appendChild(fragment)
 })
 
 const phases = ['NONE', 'JOIN', 'PREP', 'SHUF', 'DEAL', 'PLAY', 'SHOW']
-
-function cardChar(card) {
-  let codepoint = 0x1F000
-  codepoint += 0xA0 + 16 * Math.floor(card / 13)
-  const rank = card % 13
-  codepoint += rank === 12 ? 1 : rank + 2 + (9 < rank)
-  return String.fromCodePoint(codepoint)
-}
 
 socket.on('activeGames', (configs, data) => {
   playDiv.replaceChildren()
   configs.forEach(config => {
     if (!(config.id in logs)) logs[config.id] = []
     const di = data[config.id]
-    const li = playDiv.appendChild(document.createElement('li'))
+    const li = fragment.appendChild(document.createElement('li'))
     li.appendChild(document.createElement('ul')).id = `logs${config.id}`
     li.firstElementChild.classList.add('logs')
     li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
@@ -211,7 +220,7 @@ socket.on('activeGames', (configs, data) => {
       ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
       ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
       ul.appendChild(document.createElement('li')).innerText = `Board: ${di.board.map(card => cardChar(card - 1)).join()}`
-      ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
+      ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card)).join()}`
       const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
       ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
       const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
@@ -321,6 +330,7 @@ socket.on('activeGames', (configs, data) => {
     }
     setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
+  playDiv.appendChild(fragment)
 })
 
 const buyInElement = document.getElementById('buyIn')
