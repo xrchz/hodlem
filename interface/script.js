@@ -130,7 +130,7 @@ rejectTxnButton.addEventListener('click', (e) => {
 const emptyAddress = '0x0000000000000000000000000000000000000000'
 
 function cardChar(card) {
-  if (card === 52) return '🂠'
+  if (card === 53) return '🂠'
   let codepoint = 0x1F000
   codepoint += 0xA0 + 16 * Math.floor(card / 13)
   const rank = card % 13
@@ -150,10 +150,10 @@ socket.on('logs', (id, newLogs) => {
   const logsList = document.getElementById(`logs${id}`)
   fragment.append(...logs[id].map(log => {
     const li = document.createElement('li')
-    if (log.startsWith('Show')) {
+    if (log.startsWith('Show(')) {
       const i = log.lastIndexOf(',') + 1
       const card = parseInt(log.substring(i, log.lastIndexOf(')')))
-      log = log.substring(0, i).concat(cardChar(card), ')')
+      log = log.substring(0, i).concat(card, ':', cardChar(card - 1), ')')
     }
     li.innerText = log
     return li
@@ -220,7 +220,7 @@ socket.on('activeGames', (configs, data) => {
       ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
       ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
       ul.appendChild(document.createElement('li')).innerText = `Board: ${di.board.map(card => cardChar(card - 1)).join()}`
-      ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card)).join()}`
+      ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
       const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
       ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
       const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))

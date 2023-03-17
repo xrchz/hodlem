@@ -567,7 +567,7 @@ def _cardAt(_tableId: uint256, _deckIndex: uint256) -> uint256:
 @external
 @view
 def cardAt(_tableId: uint256, _deckIndex: uint256) -> uint256:
-  return self._cardAt(_tableId, _deckIndex)
+  return unsafe_sub(self._cardAt(_tableId, _deckIndex), 1)
 
 @external
 @view

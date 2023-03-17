@@ -77,7 +77,7 @@ struct Game:
 
 games: public(HashMap[uint256, Game])
 
-PENDING_REVEAL: constant(uint256) = 53
+PENDING_REVEAL: constant(uint256) = 54
 
 @external
 def afterShuffle(_tableId: uint256):
