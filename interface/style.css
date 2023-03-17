@@ -23,8 +23,29 @@ body {
   text-align: right;
 }
 
+dl {
+  display: flex;
+  flex-flow: column wrap;
+  max-height: 10em;
+}
+dt {
+  font-weight: bold;
+}
+dd {
+  margin: 0;
+}
+
+ul {
+  list-style-type: none;
+}
+
 ul.logs {
   max-height: 10em;
+  margin: auto;
+  background-color: black;
+  color: white;
+  border-style: solid;
+  border-color: oldlace;
   overflow: auto;
 }
 

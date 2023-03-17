@@ -210,9 +210,27 @@ socket.on('activeGames', (configs, data) => {
       })
     }
     const li = fragment.appendChild(document.createElement('li'))
-    li.appendChild(document.createElement('ul')).id = `logs${config.id}`
-    li.firstElementChild.classList.add('logs')
-    li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
+    const configDiv = li.appendChild(document.createElement('dl'))
+    Object.entries(config).forEach(([k, v]) => {
+      configDiv.appendChild(document.createElement('dt')).innerText = k
+      configDiv.appendChild(document.createElement('dd')).innerText = v
+    })
+    const hideConfigButton = li.appendChild(document.createElement('input'))
+    hideConfigButton.type = 'button'
+    hideConfigButton.value = 'Hide Config'
+    hideConfigButton.addEventListener('click', _ => {
+      if (configDiv.classList.contains('hidden')) {
+        configDiv.classList.remove('hidden')
+        hideConfigButton.value = 'Hide Config'
+      }
+      else {
+        configDiv.classList.add('hidden')
+        hideConfigButton.value = 'Show Config'
+      }
+    })
+    const logsUl = li.appendChild(document.createElement('ul'))
+    logsUl.id = `logs${config.id}`
+    logsUl.classList.add('logs')
     const ul = li.appendChild(document.createElement('ul'))
     ul.appendChild(document.createElement('li')).innerText = `Your seat: ${di.seatIndex}`
     ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[di.phase]}`
