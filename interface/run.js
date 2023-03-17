@@ -201,10 +201,12 @@ async function refreshActiveGames(socket) {
     const id = idNum.toString()
     const numPlayers = socket.gameConfigs[id].startsWith.toNumber()
     if (!(id in socket.activeGames)) {
+      const players = []
       for (const seatIndex of Array(numPlayers).keys()) {
-        if (await room.playerAt(idNum, seatIndex) === socket.account.address) {
-          socket.activeGames[id] = { seatIndex: seatIndex }
-          break
+        const player = await room.playerAt(idNum, seatIndex)
+        players.push(player)
+        if (player === socket.account.address) {
+          socket.activeGames[id] = { seatIndex, players }
         }
       }
     }
@@ -676,12 +678,9 @@ io.on('connection', async socket => {
   })
 
   socket.on('requestLogs', async (tableId, lastN) => {
-    const format = (log) => {
-      return `${log.name}(${log.args.join()})`
-    }
     socket.emit('logs', tableId,
-      lastN === 1 ? [format(await db.getData(`/logs/t${tableId}[-1]`))] :
-      (await db.getData(`/logs/t${tableId}`)).slice(-lastN).map(log => format(log)))
+      lastN === 1 ? [await db.getData(`/logs/t${tableId}[-1]`)] :
+      (await db.getData(`/logs/t${tableId}`)).slice(-lastN))
   })
 
   socket.on('createGame', async data => {

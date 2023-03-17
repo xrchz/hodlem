@@ -140,6 +140,7 @@ function cardChar(card) {
 }
 
 const logs = {}
+const addressToSeat = {}
 
 socket.on('logCount', (id, count) => {
   if (logs[id].length < count)
@@ -151,12 +152,14 @@ socket.on('logs', (id, newLogs) => {
   const logsList = document.getElementById(`logs${id}`)
   fragment.append(...logs[id].map(log => {
     const li = document.createElement('li')
-    if (log.startsWith('Show(')) {
-      const i = log.lastIndexOf(',') + 1
-      const card = parseInt(log.substring(i, log.lastIndexOf(')')))
-      log = log.substring(0, i).concat(card, ':', cardChar(card - 1), ')')
+    if (log.name === 'Show') {
+      log.args.push(cardChar(log.args[2] - 1))
     }
-    li.innerText = log
+    if (typeof(log.args[0]) === 'string' && log.args[0].startsWith('0x') &&
+        log.name !== 'JoinTable') {
+      log.args[0] = addressToSeat[id][log.args[0]]
+    }
+    li.innerText = `${log.name}(${log.args.join()})`
     return li
   }))
   logsList.replaceChildren()
@@ -200,6 +203,12 @@ socket.on('activeGames', (configs, data) => {
   configs.forEach(config => {
     if (!(config.id in logs)) logs[config.id] = []
     const di = data[config.id]
+    if (!(config.id in addressToSeat)) {
+      addressToSeat[config.id] = {}
+      di.players.forEach((addr, seatIndex) => {
+        addressToSeat[config.id][addr] = seatIndex
+      })
+    }
     const li = fragment.appendChild(document.createElement('li'))
     li.appendChild(document.createElement('ul')).id = `logs${config.id}`
     li.firstElementChild.classList.add('logs')
