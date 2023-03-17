@@ -66,6 +66,7 @@ hidePrivkeyButton.addEventListener('click', (e) => {
 
 newAccountButton.addEventListener('click', (e) => {
   socket.emit('newAccount')
+  newAccountButton.disabled = true
 })
 
 privkeyElement.addEventListener('change', (e) => {
@@ -183,6 +184,7 @@ socket.on('pendingGames', (configs, seats) => {
         button.value = onTable ? 'Leave' : 'Join'
         button.addEventListener('click', (e) => {
           socket.emit(`${button.value.toLowerCase()}Game`, config.id, seatIndex)
+          button.disabled = true
         })
       }
     })
@@ -213,6 +215,7 @@ socket.on('activeGames', (configs, data) => {
         button.value = `${di.reveal ? 'Reveal' : 'Commit'} preparation`
         button.addEventListener('click', _ => {
           socket.emit(`${di.reveal ? 'verify' : 'submit'}Prep`, config.id, di.seatIndex)
+          button.disabled = true
         })
       }
     }
@@ -237,6 +240,7 @@ socket.on('activeGames', (configs, data) => {
           button.value = 'Submit shuffle'
           button.addEventListener('click', _ => {
             socket.emit('submitShuffle', config.id)
+            button.disabled = true
           })
         }
       }
@@ -248,6 +252,7 @@ socket.on('activeGames', (configs, data) => {
           button.value = 'Verify shuffle'
           button.addEventListener('click', _ => {
             socket.emit('submitVerif', config.id)
+            button.disabled = true
           })
         }
       }
@@ -263,6 +268,7 @@ socket.on('activeGames', (configs, data) => {
         button.value = `Deal card${decrypts.length > 1 ? 's' : ''} ${decrypts.join()}`
         button.addEventListener('click', _ => {
           socket.emit('decryptCards', config.id, decrypts)
+          button.disabled = true
         })
       }
       if (opens.length) {
@@ -271,6 +277,7 @@ socket.on('activeGames', (configs, data) => {
         button.value = `Open card${opens.length > 1 ? 's' : ''} ${opens.join()}`
         button.addEventListener('click', _ => {
           socket.emit('openCards', config.id, opens)
+          button.disabled = true
         })
       }
       if (!di.waitingOn.length) {
@@ -279,6 +286,7 @@ socket.on('activeGames', (configs, data) => {
         button.value = 'Finish deal'
         button.addEventListener('click', _ => {
           socket.emit('endDeal', config.id)
+          button.disabled = true
         })
       }
     }
@@ -287,15 +295,9 @@ socket.on('activeGames', (configs, data) => {
         const fold = li.appendChild(document.createElement('input'))
         fold.type = 'button'
         fold.value = 'Fold'
-        fold.addEventListener('click', _ => {
-          socket.emit('fold', config.id, di.seatIndex)
-        })
         const call = li.appendChild(document.createElement('input'))
         call.type = 'button'
         call.value = 'Call'
-        call.addEventListener('click', _ => {
-          socket.emit('call', config.id, di.seatIndex)
-        })
         const amount = li.appendChild(document.createElement('input'))
         amount.inputmode = 'decimal'
         amount.pattern = "^([1-9]\\d*)|(\\d*\\.\\d+)$"
@@ -304,9 +306,20 @@ socket.on('activeGames', (configs, data) => {
         const bet = li.appendChild(document.createElement('input'))
         bet.type = 'button'
         bet.value = 'Raise'
+        const buttons = [fold, call, bet]
+        fold.addEventListener('click', _ => {
+          socket.emit('fold', config.id, di.seatIndex)
+          buttons.forEach(b => b.disabled = true)
+        })
+        call.addEventListener('click', _ => {
+          socket.emit('call', config.id, di.seatIndex)
+          buttons.forEach(b => b.disabled = true)
+        })
         bet.addEventListener('click', _ => {
-          if (amount.checkValidity())
+          if (amount.checkValidity()) {
             socket.emit('raise', config.id, di.seatIndex, amount.value, di.bet[di.seatIndex])
+            buttons.forEach(b => b.disabled = true)
+          }
           else
             amount.reportValidity()
         })
@@ -317,14 +330,17 @@ socket.on('activeGames', (configs, data) => {
         const fold = li.appendChild(document.createElement('input'))
         fold.type = 'button'
         fold.value = 'Fold'
-        fold.addEventListener('click', _ => {
-          socket.emit('foldCards', config.id, di.seatIndex)
-        })
         const call = li.appendChild(document.createElement('input'))
         call.type = 'button'
         call.value = 'Show'
+        const buttons = [fold, call]
         call.addEventListener('click', _ => {
           socket.emit('show', config.id, di.seatIndex)
+          buttons.forEach(b => b.disabled = true)
+        })
+        fold.addEventListener('click', _ => {
+          socket.emit('foldCards', config.id, di.seatIndex)
+          buttons.forEach(b => b.disabled = true)
         })
       }
     }
