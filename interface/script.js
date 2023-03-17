@@ -351,7 +351,9 @@ const configElements = [
   structureElement, levelBlocksElement, verifRoundsElement,
   prepBlocksElement, shuffBlocksElement, verifBlocksElement, dealBlocksElement, actBlocksElement
 ]
+const createDiv = document.getElementById('createDiv')
 const createGameButton = document.getElementById('createGame')
+const hideNewGameButton = document.getElementById('hideNewGame')
 
 createGameButton.addEventListener('click', (e) => {
   seatIndexElement.max = startsWithElement.value - 1
@@ -361,6 +363,17 @@ createGameButton.addEventListener('click', (e) => {
   }
   else {
     configElements.forEach(x => x.reportValidity())
+  }
+})
+
+hideNewGameButton.addEventListener('click', _ => {
+  if (createDiv.classList.contains('hidden')) {
+    createDiv.classList.remove('hidden')
+    hideNewGameButton.value = 'Hide'
+  }
+  else {
+    createDiv.classList.add('hidden')
+    hideNewGameButton.value = 'Show'
   }
 })
 

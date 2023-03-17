@@ -43,8 +43,10 @@
       <h2>Games Waiting for Players</h2>
       <ul id=joinDiv></ul>
     </section>
-    <section id=createDiv>
+    <section>
       <h2>New Game</h2>
+      <input id=hideNewGame type=button value="Hide"></input>
+      <div id=createDiv>
       <ul>
         <li><label>Buy in: <input id=buyIn class=amount value=0.2 inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input></label></li>
         <li><label>Bond: <input id=bond class=amount value=1.0 inputmode=decimal pattern="^([1-9]\d*)|(\d*\.\d+)$"></input></label></li>
@@ -61,6 +63,7 @@
         <li><label>Block deadline for acting: <input id=actBlocks class=blocks type=number value=30 min=1></input></label></li>
       </ul>
       <input id=createGame type=button value="Create game"></input>
+      </div>
     </section>
     <script src="script.js"></script>
   </body>
