@@ -312,6 +312,11 @@ def foldCards(_tableId: uint256, _seatIndex: uint256):
   log Fold(_tableId, _seatIndex)
   self.afterShow(_tableId)
 
+event ShowHand:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+  rank: uint256
+
 @internal
 def afterShow(_tableId: uint256):
   seatIndex: uint256 = self.games[_tableId].actionIndex
@@ -338,6 +343,7 @@ def afterShow(_tableId: uint256):
       hand[5] = T.cardAt(_tableId, self.games[_tableId].hands[contestantIndex][0])
       hand[6] = T.cardAt(_tableId, self.games[_tableId].hands[contestantIndex][1])
       handRank: uint256 = self.bestHandRank(hand)
+      log ShowHand(_tableId, contestantIndex, handRank)
       if bestHandRank < handRank:
         winners = [contestantIndex]
       elif bestHandRank == handRank:
