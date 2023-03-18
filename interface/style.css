@@ -5,6 +5,29 @@
 
 body {
   font-family: 'DejaVu Sans', sans-serif;
+  font-size: large;
+  background-color: #004;
+  color: Lavender;
+}
+
+input {
+  font-size: large;
+  background-color: DarkSlateBlue;
+  color: PapayaWhip;
+}
+
+input[type=text] {
+  background-color: DarkSlateBlue;
+  color: PapayaWhip;
+}
+
+input[type=text]:disabled {
+  background-color: #382d7b;
+}
+
+input[type=button] {
+  background-color: RoyalBlue;
+  color: LightYellow;
 }
 
 .address {
@@ -35,10 +58,12 @@ dl {
   max-width: 40em;
   margin: auto;
   border-style: solid;
-  border-color: slategrey;
+  border-color: OldLace;
+  background-color: #002;
 }
 dt {
   font-weight: bold;
+  color: MistyRose;
 }
 dd {
   margin: 0;
@@ -60,16 +85,20 @@ ul.logs {
   max-width: 40em;
   margin: auto;
   padding-left: 0.5em;
-  background-color: black;
-  color: white;
+  background-color: #002;
+  color: White;
   border-style: solid;
-  border-color: oldlace;
+  border-color: OldLace;
   overflow: auto;
 }
 
 ul.log > li {
   display: inline-block;
   margin-left: 0.5em;
+}
+
+ul.log > li.name {
+  color: MistyRose;
 }
 
 .amountGwei {
@@ -95,4 +124,24 @@ input[type=number] {
 
 .hidden {
   display: none;
+}
+
+ul.logs .card {
+  font-size: large;
+}
+
+.card {
+  font-size: xx-large;
+}
+.hearts {
+  color: LightPink;
+}
+.diamonds {
+  color: Moccasin;
+}
+.clubs {
+  color: PaleGreen;
+}
+.spades {
+  color: PowderBlue;
 }

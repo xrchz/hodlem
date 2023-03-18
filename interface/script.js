@@ -130,17 +130,25 @@ rejectTxnButton.addEventListener('click', (e) => {
 
 const emptyAddress = '0x0000000000000000000000000000000000000000'
 
-function cardChar(card) {
-  if (card === 53) return '🂠'
-  let codepoint = 0x1F000
-  codepoint += 0xA0 + 16 * Math.floor(card / 13)
-  const rank = card % 13
-  codepoint += rank === 12 ? 1 : rank + 2 + (9 < rank)
-  return String.fromCodePoint(codepoint)
+function cardSpan(card) {
+  const span = document.createElement('span')
+  span.classList.add('card')
+  if (card === 53) span.innerText = '🂠'
+  else {
+    let codepoint = 0x1F000
+    const suit = Math.floor(card / 13)
+    codepoint += 0xA0 + 16 * suit
+    const rank = card % 13
+    codepoint += rank === 12 ? 1 : rank + 2 + (9 < rank)
+    span.classList.add(['spades', 'hearts', 'diamonds', 'clubs'][suit])
+    span.innerText = String.fromCodePoint(codepoint)
+  }
+  return span
 }
 
 const logs = {}
 const addressToSeat = {}
+const hideConfig = {}
 
 socket.on('logCount', (id, count) => {
   if (logs[id].length < count)
@@ -152,10 +160,16 @@ socket.on('logs', (id, newLogs) => {
   const logsList = document.getElementById(`logs${id}`)
   fragment.append(...logs[id].map(log => {
     const li = document.createElement('li')
-    if (log.name === 'Show') {
-      log.args.push(cardChar(log.args[2] - 1))
+    if (log.name === 'Show' && log.args.length < 4) {
+      log.args.push(cardSpan(log.args[2] - 1))
     }
-    if (typeof(log.args[0]) === 'string' && log.args[0].startsWith('0x') &&
+    if (log.name === 'DeckPrep' && typeof log.args[1] !== 'string') {
+      log.args[1] = log.args[1] ? 'Reveal' : 'Commit'
+    }
+    if (log.name === 'Shuffle' && typeof log.args[1] !== 'string') {
+      log.args[1] = log.args[1] ? 'Verify' : 'Submit'
+    }
+    if (typeof log.args[0] === 'string' && log.args[0].startsWith('0x') &&
         log.name !== 'JoinTable') {
       const span = document.createElement('span')
       span.innerText = addressToSeat[id][log.args[0]]
@@ -181,14 +195,40 @@ socket.on('logs', (id, newLogs) => {
   logsList.lastElementChild.scrollIntoView(false)
 })
 
+function addGameConfig(li, config) {
+  const configDiv = li.appendChild(document.createElement('dl'))
+  Object.entries(config).forEach(([k, v]) => {
+    if (['deckId', 'id'].includes(k)) return
+    configDiv.appendChild(document.createElement('dt')).innerText = k
+    configDiv.appendChild(document.createElement('dd')).innerText = v
+  })
+  const hideConfigButton = li.appendChild(document.createElement('input'))
+  hideConfigButton.type = 'button'
+  hideConfigButton.value = 'Hide Config'
+  hideConfigButton.addEventListener('click', _ => {
+    if (configDiv.classList.contains('hidden')) {
+      configDiv.classList.remove('hidden')
+      hideConfigButton.value = 'Hide Config'
+      delete hideConfig[config.id]
+    }
+    else {
+      configDiv.classList.add('hidden')
+      hideConfigButton.value = 'Show Config'
+      hideConfig[config.id] = true
+    }
+  })
+  if (hideConfig[config.id]) hideConfigButton.dispatchEvent(new Event('click'))
+}
+
 socket.on('pendingGames', (configs, seats) => {
   joinDiv.replaceChildren()
   configs.forEach(config => {
     if (!(config.id in logs)) logs[config.id] = []
     const li = fragment.appendChild(document.createElement('li'))
-    li.appendChild(document.createElement('ul')).id = `logs${config.id}`
-    li.firstElementChild.classList.add('logs')
-    li.appendChild(document.createElement('p')).innerText = JSON.stringify(config)
+    addGameConfig(li, config)
+    const logsUl = li.appendChild(document.createElement('ul'))
+    logsUl.id = `logs${config.id}`
+    logsUl.classList.add('logs')
     const ol = li.appendChild(document.createElement('ol'))
     ol.start = 0
     const onTable = seats[config.id].includes(addressElement.value)
@@ -224,25 +264,7 @@ socket.on('activeGames', (configs, data) => {
       })
     }
     const li = fragment.appendChild(document.createElement('li'))
-    const configDiv = li.appendChild(document.createElement('dl'))
-    Object.entries(config).forEach(([k, v]) => {
-      if (['deckId', 'id'].includes(k)) return
-      configDiv.appendChild(document.createElement('dt')).innerText = k
-      configDiv.appendChild(document.createElement('dd')).innerText = v
-    })
-    const hideConfigButton = li.appendChild(document.createElement('input'))
-    hideConfigButton.type = 'button'
-    hideConfigButton.value = 'Hide Config'
-    hideConfigButton.addEventListener('click', _ => {
-      if (configDiv.classList.contains('hidden')) {
-        configDiv.classList.remove('hidden')
-        hideConfigButton.value = 'Hide Config'
-      }
-      else {
-        configDiv.classList.add('hidden')
-        hideConfigButton.value = 'Show Config'
-      }
-    })
+    addGameConfig(li, config)
     const logsUl = li.appendChild(document.createElement('ul'))
     logsUl.id = `logs${config.id}`
     logsUl.classList.add('logs')
@@ -265,8 +287,12 @@ socket.on('activeGames', (configs, data) => {
     else {
       ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
       ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
-      ul.appendChild(document.createElement('li')).innerText = `Board: ${di.board.map(card => cardChar(card - 1)).join()}`
-      ul.appendChild(document.createElement('li')).innerText = `Hole cards: ${di.hand.map(card => cardChar(card - 1)).join()}`
+      const board = ul.appendChild(document.createElement('li'))
+      board.appendChild(document.createElement('span')).innerText = 'Board: '
+      di.board.forEach(card => board.appendChild(cardSpan(card - 1)))
+      const hole = ul.appendChild(document.createElement('li'))
+      hole.appendChild(document.createElement('span')).innerText = 'Hole cards: '
+      di.hand.forEach(card => hole.appendChild(cardSpan(card - 1)))
       const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
       ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
       const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
