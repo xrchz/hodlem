@@ -117,6 +117,11 @@ ul.pots > li {
   margin-left: 0.25em;
 }
 
+.actions {
+  margin: auto;
+  max-width: 40em;
+}
+
 .amountGwei {
   width: 8em;
 }
@@ -149,15 +154,15 @@ ul.logs .card {
 .card {
   font-size: xx-large;
 }
-.hearts {
+.Hearts {
   color: LightPink;
 }
-.diamonds {
+.Diamonds {
   color: Moccasin;
 }
-.clubs {
+.Clubs {
   color: PaleGreen;
 }
-.spades {
+.Spades {
   color: PowderBlue;
 }

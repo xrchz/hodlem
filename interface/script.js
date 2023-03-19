@@ -140,7 +140,10 @@ function cardSpan(card) {
     codepoint += 0xA0 + 16 * suit
     const rank = card % 13
     codepoint += rank === 12 ? 1 : rank + 2 + (9 < rank)
-    span.classList.add(['spades', 'hearts', 'diamonds', 'clubs'][suit])
+    const suitName = ['Spades', 'Hearts', 'Diamonds', 'Clubs'][suit]
+    span.classList.add(suitName)
+    const rankName = ['Deuce', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King', 'Ace'][rank]
+    span.title = `${rankName} of ${suitName}`
     span.innerText = String.fromCodePoint(codepoint)
   }
   return span
@@ -366,18 +369,20 @@ socket.on('activeGames', (configs, data) => {
     }
     if (phases[di.phase] === 'PLAY') {
       if (di.actionIndex == di.seatIndex) {
-        const fold = li.appendChild(document.createElement('input'))
+        const div = li.appendChild(document.createElement('div'))
+        div.classList.add('actions')
+        const fold = div.appendChild(document.createElement('input'))
         fold.type = 'button'
         fold.value = 'Fold'
-        const call = li.appendChild(document.createElement('input'))
+        const call = div.appendChild(document.createElement('input'))
         call.type = 'button'
         call.value = 'Call'
-        const amount = li.appendChild(document.createElement('input'))
+        const amount = div.appendChild(document.createElement('input'))
         amount.inputmode = 'decimal'
         amount.pattern = "^([1-9]\\d*)|(\\d*\\.\\d+)$"
         amount.value = di.minRaise
         amount.classList.add('amount', 'justifyRight')
-        const bet = li.appendChild(document.createElement('input'))
+        const bet = div.appendChild(document.createElement('input'))
         bet.type = 'button'
         bet.value = 'Raise'
         const buttons = [fold, call, bet]
