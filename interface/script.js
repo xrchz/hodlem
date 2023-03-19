@@ -292,13 +292,18 @@ socket.on('activeGames', (configs, data) => {
       di.board.forEach(card => board.appendChild(cardSpan(card - 1)))
       const hole = ul.appendChild(document.createElement('li'))
       hole.appendChild(document.createElement('span')).innerText = 'Hole cards: '
-      di.hand.forEach(card => hole.appendChild(cardSpan(card - 1)))
+      di.hand.forEach(card => { if (card) hole.appendChild(cardSpan(card - 1)) })
       const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
       ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
       const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
       ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
       ul.appendChild(document.createElement('li')).innerText = `Bet: ${di.bet[di.betIndex]}`
-      ul.appendChild(document.createElement('li')).innerText = `Pots: ${JSON.stringify(di.pot)}`
+      const pots = ul.appendChild(document.createElement('li'))
+      pots.appendChild(document.createElement('span')).innerText = `Pot${di.pot.length > 1 ? 's' : ''}: `
+      const potsList = pots.appendChild(document.createElement('ul'))
+      potsList.classList.add('pots')
+      di.pot.forEach(pot => potsList.appendChild(document.createElement('li')).innerText = pot)
+      potsList.appendChild(document.createElement('li')).innerText = `(with bets: ${di.lastPotWithBets})`
     }
     if (phases[di.phase] === 'SHUF') {
       if (di.shuffleCount < config.startsWith) {

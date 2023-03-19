@@ -30,6 +30,13 @@ input[type=button] {
   color: LightYellow;
 }
 
+input[type=button]:disabled {
+  color: RoyalBlue;
+  background-color: Navy;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .address {
   width: 36em;
 }
@@ -99,6 +106,15 @@ ul.log > li {
 
 ul.log > li.name {
   color: MistyRose;
+}
+
+ul.pots {
+  display: inline-block;
+}
+
+ul.pots > li {
+  display: inline-block;
+  margin-left: 0.25em;
 }
 
 .amountGwei {

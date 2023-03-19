@@ -220,10 +220,18 @@ async function refreshActiveGames(socket) {
     data.board = gameData.board.flatMap(i => i.isZero() ? [] : [i.toNumber()])
     data.hand = []
     data.stack = gameData.stack.slice(0, numPlayers).map(s => ethers.utils.formatEther(s))
-    data.bet = gameData.bet.slice(0, numPlayers).map(b => ethers.utils.formatEther(b))
+    const playerBets = gameData.bet.slice(0, numPlayers)
+    data.bet = playerBets.map(b => ethers.utils.formatEther(b))
     data.betIndex = gameData.betIndex.toNumber()
     data.pot = gameData.pot.slice(0, numPlayers).flatMap(p => p.isZero() ? [] : [ethers.utils.formatEther(p)])
-    if (!data.pot.length) data.pot.push(0)
+    if (data.phase > Phase_DEAL || (data.phase === Phase_DEAL && data.pot.length)) {
+      for (const idx of gameData.hands[data.seatIndex])
+        data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
+    }
+    if (!data.pot.length) data.pot.push('0')
+    const betsTotal = playerBets.reduce((a, b) => a.add(b))
+    data.lastPotWithBets = ethers.utils.formatEther(
+      ethers.utils.parseEther(data.pot.at(-1)).add(betsTotal))
     data.actionIndex = gameData.actionIndex.toNumber()
     data.minRaise = ethers.utils.formatEther(gameData.minRaise)
     data.dealer = gameData.dealer.toNumber()
@@ -273,14 +281,6 @@ async function refreshActiveGames(socket) {
           }
         }
       }
-    }
-    if (data.phase === Phase_PLAY) {
-      for (const idx of gameData.hands[data.seatIndex])
-        data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
-    }
-    if (data.phase === Phase_SHOW) {
-      for (const idx of gameData.hands[data.seatIndex])
-        data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
     }
   }
   socket.emit('activeGames',
