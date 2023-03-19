@@ -9,6 +9,7 @@ const clearErrorMsgButton = errorMsg.getElementsByTagName('input')[0]
 socket.on('errorMsg', msg => {
   errorMsg.classList.remove('hidden')
   errorMsgText.innerText = msg
+  document.querySelectorAll('input.txnRequester').forEach(b => b.disabled = false)
 })
 
 clearErrorMsgButton.addEventListener('click', _ => {
@@ -242,6 +243,7 @@ socket.on('pendingGames', (configs, seats) => {
         const button = seatLi.appendChild(document.createElement('input'))
         button.type = 'button'
         button.value = onTable ? 'Leave' : 'Join'
+        button.classList.add('txnRequester')
         button.addEventListener('click', (e) => {
           socket.emit(`${button.value.toLowerCase()}Game`, config.id, seatIndex)
           button.disabled = true
@@ -251,6 +253,7 @@ socket.on('pendingGames', (configs, seats) => {
     setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
   joinDiv.appendChild(fragment)
+  createGameButton.disabled = false
 })
 
 const phases = ['NONE', 'JOIN', 'PREP', 'SHUF', 'DEAL', 'PLAY', 'SHOW']
@@ -278,9 +281,12 @@ socket.on('activeGames', (configs, data) => {
     if (phases[di.phase] === 'PREP') {
       ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
       if (di.waitingOn.includes(di.seatIndex)) {
-        const button = li.appendChild(document.createElement('input'))
+        const div = li.appendChild(document.createElement('div'))
+        div.classList.add('actions')
+        const button = div.appendChild(document.createElement('input'))
         button.type = 'button'
         button.value = `${di.reveal ? 'Reveal' : 'Commit'} preparation`
+        button.classList.add('txnRequester')
         button.addEventListener('click', _ => {
           socket.emit(`${di.reveal ? 'verify' : 'submit'}Prep`, config.id, di.seatIndex)
           button.disabled = true
@@ -312,9 +318,12 @@ socket.on('activeGames', (configs, data) => {
       if (di.shuffleCount < config.startsWith) {
         ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${di.shuffleCount}`
         if (di.shuffleCount === di.seatIndex) {
-          const button = li.appendChild(document.createElement('input'))
+          const div = li.appendChild(document.createElement('div'))
+          div.classList.add('actions')
+          const button = div.appendChild(document.createElement('input'))
           button.type = 'button'
           button.value = 'Submit shuffle'
+          button.classList.add('txnRequester')
           button.addEventListener('click', _ => {
             socket.emit('submitShuffle', config.id)
             button.disabled = true
@@ -324,9 +333,12 @@ socket.on('activeGames', (configs, data) => {
       else {
         ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
         if (di.waitingOn.includes(di.seatIndex)) {
-          const button = li.appendChild(document.createElement('input'))
+          const div = li.appendChild(document.createElement('div'))
+          div.classList.add('actions')
+          const button = div.appendChild(document.createElement('input'))
           button.type = 'button'
           button.value = 'Verify shuffle'
+          button.classList.add('txnRequester')
           button.addEventListener('click', _ => {
             socket.emit('submitVerif', config.id)
             button.disabled = true
@@ -339,28 +351,33 @@ socket.on('activeGames', (configs, data) => {
       const requests = di.waitingOn.flatMap(({who, what, open}) => (who === di.seatIndex ? [[what, open]] : []))
       const decrypts = requests.filter(([, open]) => !open).map(([i]) => i)
       const opens = requests.filter(([, open]) => open).map(([i]) => i)
+      const div = ul.appendChild(document.createElement('li')).appendChild(document.createElement('div'))
+      div.classList.add('actions')
       if (decrypts.length) {
-        const button = ul.appendChild(document.createElement('li')).appendChild(document.createElement('input'))
+        const button = div.appendChild(document.createElement('input'))
         button.type = 'button'
         button.value = `Deal card${decrypts.length > 1 ? 's' : ''} ${decrypts.join()}`
+        button.classList.add('txnRequester')
         button.addEventListener('click', _ => {
           socket.emit('decryptCards', config.id, decrypts)
           button.disabled = true
         })
       }
       if (opens.length) {
-        const button = ul.appendChild(document.createElement('li')).appendChild(document.createElement('input'))
+        const button = div.appendChild(document.createElement('input'))
         button.type = 'button'
         button.value = `Open card${opens.length > 1 ? 's' : ''} ${opens.join()}`
+        button.classList.add('txnRequester')
         button.addEventListener('click', _ => {
           socket.emit('openCards', config.id, opens)
           button.disabled = true
         })
       }
       if (!di.waitingOn.length) {
-        const button = li.appendChild(document.createElement('input'))
+        const button = div.appendChild(document.createElement('input'))
         button.type = 'button'
         button.value = 'Finish deal'
+        button.classList.add('txnRequester')
         button.addEventListener('click', _ => {
           socket.emit('endDeal', config.id)
           button.disabled = true
@@ -386,6 +403,7 @@ socket.on('activeGames', (configs, data) => {
         bet.type = 'button'
         bet.value = 'Raise'
         const buttons = [fold, call, bet]
+        buttons.forEach(b => b.classList.add('txnRequester'))
         fold.addEventListener('click', _ => {
           socket.emit('fold', config.id, di.seatIndex)
           buttons.forEach(b => b.disabled = true)
@@ -413,6 +431,7 @@ socket.on('activeGames', (configs, data) => {
         call.type = 'button'
         call.value = 'Show'
         const buttons = [fold, call]
+        buttons.forEach(b => b.classList.add('txnRequester'))
         call.addEventListener('click', _ => {
           socket.emit('show', config.id, di.seatIndex)
           buttons.forEach(b => b.disabled = true)
@@ -450,11 +469,14 @@ const createDiv = document.getElementById('createDiv')
 const createGameButton = document.getElementById('createGame')
 const hideNewGameButton = document.getElementById('hideNewGame')
 
+createGameButton.classList.add('txnRequester')
+
 createGameButton.addEventListener('click', (e) => {
   seatIndexElement.max = startsWithElement.value - 1
   if (configElements.every(x => x.checkValidity())) {
     socket.emit('createGame',
       Object.fromEntries(configElements.map(x => [x.id, x.value])))
+    createGameButton.disabled = true
   }
   else {
     configElements.forEach(x => x.reportValidity())

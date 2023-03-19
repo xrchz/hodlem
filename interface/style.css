@@ -87,6 +87,10 @@ ul.game {
   margin: auto;
 }
 
+ul#playDiv > li {
+  padding-bottom: 2em;
+}
+
 ul.logs {
   max-height: 10em;
   max-width: 40em;
