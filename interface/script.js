@@ -393,15 +393,16 @@ socket.on('activeGames', (configs, data) => {
         fold.value = 'Fold'
         const call = div.appendChild(document.createElement('input'))
         call.type = 'button'
-        call.value = 'Call'
-        const amount = div.appendChild(document.createElement('input'))
+        call.value = di.callBy === '0.0' ? 'Check' : `Call ${di.bet[di.betIndex]} with ${di.callBy}`
+        const betDiv = div.appendChild(document.createElement('div'))
+        const bet = betDiv.appendChild(document.createElement('input'))
+        bet.type = 'button'
+        bet.value = di.callBy === '0.0' ? 'Bet' : 'Raise with '
+        const amount = betDiv.appendChild(document.createElement('input'))
         amount.inputmode = 'decimal'
         amount.pattern = "^([1-9]\\d*)|(\\d*\\.\\d+)$"
-        amount.value = di.minRaise
-        amount.classList.add('amount', 'justifyRight')
-        const bet = div.appendChild(document.createElement('input'))
-        bet.type = 'button'
-        bet.value = 'Raise'
+        amount.value = di.minRaiseBy
+        amount.classList.add('amount')
         const buttons = [fold, call, bet]
         buttons.forEach(b => b.classList.add('txnRequester'))
         fold.addEventListener('click', _ => {

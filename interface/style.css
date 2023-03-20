@@ -49,10 +49,6 @@ input[type=button]:disabled {
   width: 18em;
 }
 
-.justifyRight {
-  text-align: right;
-}
-
 dl + input[type="button"] {
   margin: auto;
   display: block;
@@ -124,6 +120,8 @@ ul.pots > li {
 .actions {
   margin: auto;
   max-width: 40em;
+  display: flex;
+  justify-content: space-between;
 }
 
 .amountGwei {

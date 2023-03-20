@@ -233,7 +233,8 @@ async function refreshActiveGames(socket) {
     data.lastPotWithBets = ethers.utils.formatEther(
       ethers.utils.parseEther(data.pot.at(-1)).add(betsTotal))
     data.actionIndex = gameData.actionIndex.toNumber()
-    data.minRaise = ethers.utils.formatEther(gameData.minRaise)
+    const minRaiseBy = gameData.minRaise.add(gameData.bet[data.betIndex]).sub(gameData.bet[data.seatIndex])
+    data.minRaiseBy = ethers.utils.formatEther(minRaiseBy.lte(gameData.stack[data.seatIndex]) ? minRaiseBy : gameData.stack[data.seatIndex])
     data.dealer = gameData.dealer.toNumber()
     if (data.phase === Phase_PREP) {
       delete data.reveal
@@ -280,6 +281,12 @@ async function refreshActiveGames(socket) {
             data.waitingOn.push({what: i, who: decryptCount[i]})
           }
         }
+      }
+    }
+    if (data.phase === Phase_PLAY) {
+      if (data.actionIndex == data.seatIndex) {
+        data.callBy = ethers.utils.formatEther(
+          gameData.bet[data.betIndex].sub(gameData.bet[data.seatIndex]))
       }
     }
   }
