@@ -150,19 +150,19 @@ function cardSpan(card) {
   return span
 }
 
-const logs = {}
-const addressToSeat = {}
-const hideConfig = {}
+const logs = new Map()
+const addressToSeat = new Map()
+const hideConfig = new Set()
 
 socket.on('logCount', (id, count) => {
-  if (logs[id].length < count)
-    socket.emit('requestLogs', id, count - logs[id].length)
+  if (logs.get(id).length < count)
+    socket.emit('requestLogs', id, count - logs.get(id).length)
 })
 
 socket.on('logs', (id, newLogs) => {
-  logs[id].push(...newLogs)
+  logs.get(id).push(...newLogs)
   const logsList = document.getElementById(`logs${id}`)
-  fragment.append(...logs[id].map(log => {
+  fragment.append(...logs.get(id).map(log => {
     const li = document.createElement('li')
     if (log.name === 'Show' && log.args.length < 4) {
       log.args.push(cardSpan(log.args[2] - 1))
@@ -176,7 +176,7 @@ socket.on('logs', (id, newLogs) => {
     if (typeof log.args[0] === 'string' && log.args[0].startsWith('0x') &&
         log.name !== 'JoinTable') {
       const span = document.createElement('span')
-      span.innerText = addressToSeat[id][log.args[0]]
+      span.innerText = addressToSeat.get(id).get(log.args[0])
       span.title = log.args[0]
       log.args[0] = span
     }
@@ -213,20 +213,20 @@ function addGameConfig(li, config) {
     if (configDiv.classList.contains('hidden')) {
       configDiv.classList.remove('hidden')
       hideConfigButton.value = 'Hide Config'
-      delete hideConfig[config.id]
+      hideConfig.delete(config.id)
     }
     else {
       configDiv.classList.add('hidden')
       hideConfigButton.value = 'Show Config'
-      hideConfig[config.id] = true
+      hideConfig.add(config.id)
     }
   })
-  if (hideConfig[config.id]) hideConfigButton.dispatchEvent(new Event('click'))
+  if (hideConfig.has(config.id)) hideConfigButton.dispatchEvent(new Event('click'))
 }
 
 socket.on('pendingGames', (configs, seats) => {
   configs.forEach(config => {
-    if (!(config.id in logs)) logs[config.id] = []
+    if (!(logs.has(config.id))) logs.set(config.id, [])
     const li = fragment.appendChild(document.createElement('li'))
     addGameConfig(li, config)
     const logsUl = li.appendChild(document.createElement('ul'))
@@ -259,12 +259,13 @@ const phases = ['NONE', 'JOIN', 'PREP', 'SHUF', 'DEAL', 'PLAY', 'SHOW']
 
 socket.on('activeGames', (configs, data) => {
   configs.forEach(config => {
-    if (!(config.id in logs)) logs[config.id] = []
+    if (!(logs.has(config.id))) logs.set(config.id, [])
     const di = data[config.id]
-    if (!(config.id in addressToSeat)) {
-      addressToSeat[config.id] = {}
+    if (!(addressToSeat.has(config.id))) {
+      const m = new Map()
+      addressToSeat.set(config.id, m)
       di.players.forEach((addr, seatIndex) => {
-        addressToSeat[config.id][addr] = seatIndex
+        m.set(addr, seatIndex)
       })
     }
     const li = fragment.appendChild(document.createElement('li'))
