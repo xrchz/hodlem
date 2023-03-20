@@ -173,6 +173,9 @@ socket.on('logs', (id, newLogs) => {
     if (log.name === 'Shuffle' && typeof log.args[1] !== 'string') {
       log.args[1] = log.args[1] ? 'Verify' : 'Submit'
     }
+    if (log.name === 'DealRound' && typeof log.args[0] !== 'string') {
+      log.args[0] = ['Hole Cards', 'Flop', 'Turn', 'River'][log.args[0] - 1]
+    }
     if (typeof log.args[0] === 'string' && log.args[0].startsWith('0x') &&
         log.name !== 'JoinTable') {
       const span = document.createElement('span')
@@ -298,10 +301,10 @@ socket.on('activeGames', (configs, data) => {
       // ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
       // ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
       const board = ul.appendChild(document.createElement('li'))
-      board.appendChild(document.createElement('span')).innerText = 'Board: '
+      board.appendChild(document.createElement('span')).innerText = 'Board🟩: '
       di.board.forEach(card => board.appendChild(cardSpan(card - 1)))
       const hole = ul.appendChild(document.createElement('li'))
-      hole.appendChild(document.createElement('span')).innerText = 'Hole cards: '
+      hole.appendChild(document.createElement('span')).innerText = 'Cards🫴: '
       di.hand.forEach(card => { if (card) hole.appendChild(cardSpan(card - 1)) })
       ul.appendChild(stacks)
       stacks.classList.add('stacks')
@@ -309,9 +312,9 @@ socket.on('activeGames', (configs, data) => {
       // ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
       // const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
       // ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
-      ul.appendChild(document.createElement('li')).innerText = `Bet: ${di.bet[di.betIndex]}`
+      ul.appendChild(document.createElement('li')).innerText = `Bet🪙: ${di.bet[di.betIndex]}`
       const pots = ul.appendChild(document.createElement('li'))
-      pots.appendChild(document.createElement('span')).innerText = `Pot${di.pot.length > 1 ? 's' : ''}: `
+      pots.appendChild(document.createElement('span')).innerText = `Pot${di.pot.length > 1 ? 's' : ''}🍯: `
       const potsList = pots.appendChild(document.createElement('ul'))
       potsList.classList.add('pots')
       di.pot.forEach(pot => potsList.appendChild(document.createElement('li')).innerText = pot)

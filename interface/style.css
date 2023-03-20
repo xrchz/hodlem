@@ -83,6 +83,12 @@ ul.game {
   margin: auto;
 }
 
+ul.game > li {
+  margin: auto;
+  width: 100%;
+  text-align: center;
+}
+
 ul#playDiv > li {
   padding-bottom: 2em;
 }
