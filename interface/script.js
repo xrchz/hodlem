@@ -225,7 +225,6 @@ function addGameConfig(li, config) {
 }
 
 socket.on('pendingGames', (configs, seats) => {
-  joinDiv.replaceChildren()
   configs.forEach(config => {
     if (!(config.id in logs)) logs[config.id] = []
     const li = fragment.appendChild(document.createElement('li'))
@@ -252,14 +251,13 @@ socket.on('pendingGames', (configs, seats) => {
     })
     setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
-  joinDiv.appendChild(fragment)
+  joinDiv.replaceChildren(fragment)
   createGameButton.disabled = false
 })
 
 const phases = ['NONE', 'JOIN', 'PREP', 'SHUF', 'DEAL', 'PLAY', 'SHOW']
 
 socket.on('activeGames', (configs, data) => {
-  playDiv.replaceChildren()
   configs.forEach(config => {
     if (!(config.id in logs)) logs[config.id] = []
     const di = data[config.id]
@@ -445,7 +443,7 @@ socket.on('activeGames', (configs, data) => {
     }
     setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
-  playDiv.appendChild(fragment)
+  playDiv.replaceChildren(fragment)
 })
 
 const buyInElement = document.getElementById('buyIn')
