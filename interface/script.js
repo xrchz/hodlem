@@ -72,7 +72,7 @@ newAccountButton.addEventListener('click', (e) => {
 
 privkeyElement.addEventListener('change', (e) => {
   newAccountButton.disabled = privkeyElement.value != ''
-  socket.emit('privkey', privkeyElement.value)
+  if (privkeyElement.value) socket.emit('privkey', privkeyElement.value)
 })
 
 socket.on('account', (address, privkey) => {
