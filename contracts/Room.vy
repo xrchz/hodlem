@@ -42,6 +42,7 @@ Phase_SHOW: constant(uint256) = 6 # showdown; new card revelations may become re
 
 interface GameManager:
   def afterShuffle(_tableId: uint256): nonpayable
+  def afterDeal(_tableId: uint256, _phase: uint256): nonpayable
 
 struct Config:
   buyIn:       uint256             # entry ticket price per player
@@ -469,7 +470,7 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
   self.tables[_tableId].commitBlock = block.number
 
 @external
-def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[8], 26]):
+def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[8], 26], _end: bool):
   self.validatePhase(_tableId, Phase_DEAL)
   self.checkAuth(_tableId, _seatIndex)
   for data in _data:
@@ -480,9 +481,11 @@ def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256
       Proof({gs: [data[3], data[4]], hs: [data[5], data[6]], scx: data[7]}))
     self.autoDecrypt(_tableId, cardIndex)
     log Deal(_tableId, msg.sender, cardIndex)
+  if _end:
+    self.endDeal(_tableId)
 
 @external
-def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[7], 26]):
+def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[7], 26], _end: bool):
   self.validatePhase(_tableId, Phase_DEAL)
   self.checkAuth(_tableId, _seatIndex)
   for data in _data:
@@ -493,6 +496,8 @@ def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[
       self.tables[_tableId].deckId, _seatIndex, cardIndex, data[1],
       Proof({gs: [data[2], data[3]], hs: [data[4], data[5]], scx: data[6]}))
     log Show(_tableId, msg.sender, cardIndex, data[1])
+  if _end:
+    self.endDeal(_tableId)
 
 @internal
 @view
@@ -507,12 +512,12 @@ def checkRevelations(_tableId: uint256) -> bool:
       return False
   return True
 
-@external
+@internal
 def endDeal(_tableId: uint256):
-  self.gameAuth(_tableId)
-  self.validatePhase(_tableId, Phase_DEAL)
   assert self.checkRevelations(_tableId), "revelations missing"
-  self.tables[_tableId].phase = self.tables[_tableId].nextPhase
+  nextPhase: uint256 = self.tables[_tableId].nextPhase
+  self.tables[_tableId].phase = nextPhase
+  self.tables[_tableId].game.afterDeal(_tableId, nextPhase)
 
 @external
 def startDeal(_tableId: uint256, _nextPhase: uint256):

@@ -795,39 +795,51 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('decryptCards', async (tableId, cardIndices) => {
+  socket.on('decryptCards', async (tableId, cardIndices, end) => {
     try {
       const data = await decryptCards(socket, tableId, cardIndices)
+      const args = [
+        tableId, socket.activeGames[tableId].seatIndex, data, true, {
+          maxFeePerGas: socket.feeData.maxFeePerGas,
+          maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+        }
+      ]
+      const room_a = room.connect(socket.account)
+      try { await room_a.callStatic.decryptCards(...args) }
+      catch (e) {
+        console.log(`failed decrypt with ${e.toString()}`)
+        args[3] = false
+      }
       socket.emit('requestTransaction',
-        await room.connect(socket.account).populateTransaction
-        .decryptCards(
-          tableId, socket.activeGames[tableId].seatIndex, data, {
-            maxFeePerGas: socket.feeData.maxFeePerGas,
-            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-          }))
+        await room_a.populateTransaction.decryptCards(...args))
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
     }
   })
 
-  socket.on('openCards', async (tableId, cardIndices) => {
+  socket.on('openCards', async (tableId, cardIndices, end) => {
     try {
       const data = await revealCards(socket, tableId, cardIndices)
+      const args = [
+        tableId, socket.activeGames[tableId].seatIndex, data, true, {
+          maxFeePerGas: socket.feeData.maxFeePerGas,
+          maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+        }
+      ]
+      const room_a = room.connect(socket.account)
+      try { await room_a.callStatic.revealCards(...args) }
+      catch (e) {
+        console.log(`failed reveal with ${e.toString()}`)
+        args[3] = false
+      }
       socket.emit('requestTransaction',
-        await room.connect(socket.account).populateTransaction
-        .revealCards(
-          tableId, socket.activeGames[tableId].seatIndex, data, {
-            maxFeePerGas: socket.feeData.maxFeePerGas,
-            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
-          }))
+        await room_a.populateTransaction.revealCards(...args))
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
     }
   })
-
-  socket.on('endDeal', simpleTxn(socket, game, 'endDeal'))
 
   socket.on('foldCards', simpleTxn(socket, game, 'foldCards'))
 

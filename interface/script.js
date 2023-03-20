@@ -385,16 +385,6 @@ socket.on('activeGames', (configs, data) => {
           button.disabled = true
         })
       }
-      if (!di.waitingOn.length) {
-        const button = div.appendChild(document.createElement('input'))
-        button.type = 'button'
-        button.value = 'Finish deal'
-        button.classList.add('txnRequester')
-        button.addEventListener('click', _ => {
-          socket.emit('endDeal', config.id)
-          button.disabled = true
-        })
-      }
     }
     if (phases[di.phase] === 'PLAY') {
       actionOn.add(di.actionIndex)

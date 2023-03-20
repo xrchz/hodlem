@@ -250,16 +250,16 @@ def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
   self.afterAct(_tableId, _seatIndex)
 
 @external
-def endDeal(_tableId: uint256):
-  T.endDeal(_tableId)
-  if T.authorised(_tableId, Phase_PLAY):
+def afterDeal(_tableId: uint256, _phase: uint256):
+  assert T.address == msg.sender, "unauthorised"
+  if _phase == Phase_PLAY:
     if self.games[_tableId].startBlock == empty(uint256):
       self.selectDealer(_tableId)
     elif self.games[_tableId].board[0] == empty(uint256):
       if self.games[_tableId].actionBlock == empty(uint256):
         self.postBlinds(_tableId)
       else:
-        raise "internal consistency failure endDeal 1"
+        raise "internal consistency failure afterDeal play"
     else:
       # fill the board with the revealedCards
       boardIndex: uint256 = 5
@@ -278,10 +278,10 @@ def endDeal(_tableId: uint256):
           self.afterAct(_tableId, self.games[_tableId].dealer)
       else:
         self.games[_tableId].actionBlock = block.number
-  elif T.authorised(_tableId, Phase_SHOW):
+  elif _phase == Phase_SHOW:
     self.afterShow(_tableId)
   else:
-    raise "internal consistency failure endDeal 2"
+    raise "internal consistency failure afterDeal"
 
 event Timeout:
   table: indexed(uint256)
