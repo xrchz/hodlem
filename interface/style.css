@@ -117,6 +117,43 @@ ul.pots > li {
   margin-left: 0.25em;
 }
 
+ul.stacks {
+  display: flex;
+  justify-content: space-around;
+}
+
+ul.stacks > li {
+  display: flex;
+  justify-content: space-between;
+  min-width: 10em;
+  flex-wrap: wrap;
+}
+
+li.action {
+  background-color: #008;
+}
+
+li.self > span.seat {
+  background-color: Indigo;
+}
+
+li.dealer > span.seat {
+  border: 1px solid GoldenRod;
+  border-radius: 50%;
+}
+
+span.seat::before {
+  content: "🧑";
+}
+
+span.stack::before {
+  content: "🏦";
+}
+
+span.bet::before {
+  content: "👛";
+}
+
 .actions {
   margin: auto;
   max-width: 40em;

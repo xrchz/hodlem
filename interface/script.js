@@ -274,9 +274,11 @@ socket.on('activeGames', (configs, data) => {
     logsUl.classList.add('logs')
     const ul = li.appendChild(document.createElement('ul'))
     ul.classList.add('game')
-    ul.appendChild(document.createElement('li')).innerText = `Your seat: ${di.seatIndex}`
-    ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[di.phase]}`
+    const actionOn = new Set()
+    const stacks = document.createElement('ul')
+    // ul.appendChild(document.createElement('li')).innerText = `Game phase: ${phases[di.phase]}`
     if (phases[di.phase] === 'PREP') {
+      ul.appendChild(document.createElement('li')).innerText = `Your seat: ${di.seatIndex}`
       ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
       if (di.waitingOn.includes(di.seatIndex)) {
         const div = li.appendChild(document.createElement('div'))
@@ -292,18 +294,20 @@ socket.on('activeGames', (configs, data) => {
       }
     }
     else {
-      ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
-      ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
+      // ul.appendChild(document.createElement('li')).innerText = `Dealer: ${di.dealer}`
+      // ul.appendChild(document.createElement('li')).innerText = `Action on: ${di.actionIndex}`
       const board = ul.appendChild(document.createElement('li'))
       board.appendChild(document.createElement('span')).innerText = 'Board: '
       di.board.forEach(card => board.appendChild(cardSpan(card - 1)))
       const hole = ul.appendChild(document.createElement('li'))
       hole.appendChild(document.createElement('span')).innerText = 'Hole cards: '
       di.hand.forEach(card => { if (card) hole.appendChild(cardSpan(card - 1)) })
-      const stacks = JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
-      ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
-      const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
-      ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
+      ul.appendChild(stacks)
+      stacks.classList.add('stacks')
+      //  JSON.stringify(di.stack.map((b, i) => ({[i]: b})))
+      // ul.appendChild(document.createElement('li')).innerText = `Stacks: ${stacks}`
+      // const bets = JSON.stringify(di.bet.map((b, i) => ({[i]: b})))
+      // ul.appendChild(document.createElement('li')).innerText = `Bets: ${bets}`
       ul.appendChild(document.createElement('li')).innerText = `Bet: ${di.bet[di.betIndex]}`
       const pots = ul.appendChild(document.createElement('li'))
       pots.appendChild(document.createElement('span')).innerText = `Pot${di.pot.length > 1 ? 's' : ''}: `
@@ -314,7 +318,8 @@ socket.on('activeGames', (configs, data) => {
     }
     if (phases[di.phase] === 'SHUF') {
       if (di.shuffleCount < config.startsWith) {
-        ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${di.shuffleCount}`
+        // ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${di.shuffleCount}`
+        actionOn.add(di.shuffleCount)
         if (di.shuffleCount === di.seatIndex) {
           const div = li.appendChild(document.createElement('div'))
           div.classList.add('actions')
@@ -329,7 +334,8 @@ socket.on('activeGames', (configs, data) => {
         }
       }
       else {
-        ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+        // ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+        di.waitingOn.forEach(i => actionOn.add(i))
         if (di.waitingOn.includes(di.seatIndex)) {
           const div = li.appendChild(document.createElement('div'))
           div.classList.add('actions')
@@ -345,7 +351,8 @@ socket.on('activeGames', (configs, data) => {
       }
     }
     if (phases[di.phase] === 'DEAL') {
-      ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+      // ul.appendChild(document.createElement('li')).innerText = `Waiting on: ${JSON.stringify(di.waitingOn)}`
+      di.waitingOn.forEach(({who}) => actionOn.add(who))
       const requests = di.waitingOn.flatMap(({who, what, open}) => (who === di.seatIndex ? [[what, open]] : []))
       const decrypts = requests.filter(([, open]) => !open).map(([i]) => i)
       const opens = requests.filter(([, open]) => open).map(([i]) => i)
@@ -383,6 +390,7 @@ socket.on('activeGames', (configs, data) => {
       }
     }
     if (phases[di.phase] === 'PLAY') {
+      actionOn.add(di.actionIndex)
       if (di.actionIndex == di.seatIndex) {
         const div = li.appendChild(document.createElement('div'))
         div.classList.add('actions')
@@ -422,6 +430,7 @@ socket.on('activeGames', (configs, data) => {
       }
     }
     if (phases[di.phase] === 'SHOW') {
+      actionOn.add(di.actionIndex)
       if (di.actionIndex == di.seatIndex) {
         const fold = li.appendChild(document.createElement('input'))
         fold.type = 'button'
@@ -440,6 +449,29 @@ socket.on('activeGames', (configs, data) => {
           buttons.forEach(b => b.disabled = true)
         })
       }
+    }
+    if (phases[di.phase] !== 'PREP') {
+      di.stack.forEach((s, i) => {
+        const pli = stacks.appendChild(document.createElement('li'))
+        const seat = pli.appendChild(document.createElement('span'))
+        seat.classList.add('seat')
+        seat.innerText = i.toString()
+        seat.title = `Player ${i}`
+        const stack = pli.appendChild(document.createElement('span'))
+        stack.classList.add('stack')
+        stack.innerText = s
+        stack.title = `${i}'s stack`
+        const bet = pli.appendChild(document.createElement('span'))
+        bet.classList.add('bet')
+        bet.innerText = di.bet[i]
+        bet.title = `${i}'s bet`
+        if (i === di.dealer) {
+          pli.classList.add('dealer')
+          seat.title += ' (dealer)'
+        }
+        if (actionOn.has(i)) pli.classList.add('action')
+        if (i === di.seatIndex) pli.classList.add('self')
+      })
     }
     setTimeout(() => socket.emit('requestLogCount', config.id), 100)
   })
