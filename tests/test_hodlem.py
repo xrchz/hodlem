@@ -32,6 +32,14 @@ def test_new_deck_ids_distinct(fn_isolation, deck):
     tx2 = deck.newDeck(9, fee_args)
     assert tx1.return_value != tx2.return_value
 
+def test_new_deck_invalid_players(fn_isolation, deck):
+    with reverts("invalid players"):
+        deck.newDeck(0, fee_args)
+    with reverts("invalid players"):
+        deck.newDeck(128, fee_args)
+    tx = deck.newDeck(127, fee_args)
+    assert tx.return_value == 0
+
 def test_create_invalid_seatIndex(fn_isolation, room, game):
     with reverts("invalid seatIndex"):
         room.createTable(
