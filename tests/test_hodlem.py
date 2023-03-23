@@ -1,5 +1,5 @@
 import pytest
-from brownie import accounts, reverts, Deck, Room, Game
+from brownie import accounts, reverts, chain, Deck, Room, Game
 
 fee_args = {"max_fee": "16 gwei", "priority_fee": "2 gwei"}
 
@@ -55,3 +55,21 @@ def test_join_leave_join(fn_isolation, room, game):
     with reverts("incorrect bond + buyIn"):
         room.joinTable(tableId, seatIndex, fee_args)
     room.joinTable(tableId, seatIndex, {"value": "300 wei"} | fee_args)
+
+def test_submit_prep_timeout(fn_isolation, room, game):
+    prepBlocks = 2
+    tx = room.createTable(
+            1, (100, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2), game.address,
+            {"from": accounts[0], "value": "300 wei"} | fee_args)
+    tableId = tx.return_value
+    tx = room.joinTable(tableId, 0, {"from": accounts[1], "value": "300 wei"} | fee_args)
+    tx = room.submitPrep(tableId, 1, 0x1, fee_args)
+    chain.mine(prepBlocks + 1)
+    assert chain.height > tx.block_number + prepBlocks, "mine harder"
+    tx = room.submitPrepTimeout(tableId, 0, fee_args)
+    assert tx.internal_transfers == [
+            {"from": room.address, "to": "0x0000000000000000000000000000000000000000", "value": 300},
+            {"from": room.address, "to": accounts[0], "value": 300},
+    ]
+    with reverts("wrong phase"):
+        room.joinTable(tableId, 0, {"from": accounts[1], "value": "300 wei"} | fee_args)

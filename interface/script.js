@@ -354,7 +354,7 @@ socket.on('activeGames', (configs, data) => {
           button.value = 'Verify shuffle'
           button.classList.add('txnRequester')
           button.addEventListener('click', _ => {
-            socket.emit('submitVerif', config.id)
+            socket.emit('verifyShuffle', config.id)
             button.disabled = true
           })
         }

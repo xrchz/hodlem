@@ -244,26 +244,35 @@ def checkDeadline(_tableId: uint256, _blocks: uint256):
   assert block.number > (self.tables[_tableId].commitBlock + _blocks), "deadline not passed"
 
 @external
-def prepareTimeout(_tableId: uint256, _seatIndex: uint256):
+def submitPrepTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_PREP)
   self.checkDeadline(_tableId, self.tables[_tableId].config.prepBlocks)
   assert not D.hasSubmittedPrep(self.tables[_tableId].deckId, _seatIndex), "already submitted"
   self.failChallenge(_tableId, _seatIndex, 0)
 
 @external
-def shuffleTimeout(_tableId: uint256, _seatIndex: uint256):
-  self.validatePhase(_tableId, Phase_SHUF)
-  self.checkDeadline(_tableId, self.tables[_tableId].config.shuffBlocks)
-  assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
+def verifyPrepTimeout(_tableId: uint256, _seatIndex: uint256):
+  self.validatePhase(_tableId, Phase_PREP)
+  self.checkDeadline(_tableId, self.tables[_tableId].config.prepBlocks)
+  deckId: uint256 = self.tables[_tableId].deckId
+  assert D.allSubmittedPrep(deckId), "not submitted"
+  assert not D.hasVerifiedPrep(deckId, _seatIndex), "already verified"
   self.failChallenge(_tableId, _seatIndex, 1)
 
 @external
-def verificationTimeout(_tableId: uint256, _seatIndex: uint256):
+def submitShuffleTimeout(_tableId: uint256, _seatIndex: uint256):
+  self.validatePhase(_tableId, Phase_SHUF)
+  self.checkDeadline(_tableId, self.tables[_tableId].config.shuffBlocks)
+  assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
+  self.failChallenge(_tableId, _seatIndex, 2)
+
+@external
+def verifyShuffleTimeout(_tableId: uint256, _seatIndex: uint256):
   self.validatePhase(_tableId, Phase_SHUF)
   self.checkDeadline(_tableId, self.tables[_tableId].config.verifBlocks)
   assert self.shuffleCount(_tableId) == _seatIndex, "wrong player"
   assert not D.challengeActive(self.tables[_tableId].deckId, _seatIndex), "already verified"
-  self.failChallenge(_tableId, _seatIndex, 2)
+  self.failChallenge(_tableId, _seatIndex, 3)
 
 @external
 def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
@@ -271,7 +280,7 @@ def decryptTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
   self.checkDeadline(_tableId, self.tables[_tableId].config.dealBlocks)
   assert self.tables[_tableId].requirement[_cardIndex] != Req_DECK, "not required"
   assert self.decryptCount(_tableId, _cardIndex) == _seatIndex, "already decrypted"
-  self.failChallenge(_tableId, _seatIndex, 3)
+  self.failChallenge(_tableId, _seatIndex, 4)
 
 @external
 def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
@@ -280,7 +289,7 @@ def revealTimeout(_tableId: uint256, _seatIndex: uint256, _cardIndex: uint256):
   assert self.tables[_tableId].drawIndex[_cardIndex] == _seatIndex, "wrong player"
   assert self.tables[_tableId].requirement[_cardIndex] == Req_SHOW, "not required"
   assert D.openedCard(self.tables[_tableId].deckId, _cardIndex) == 0, "already opened"
-  self.failChallenge(_tableId, _seatIndex, 4)
+  self.failChallenge(_tableId, _seatIndex, 5)
 
 @internal
 def failChallenge(_tableId: uint256, _challIndex: uint256, _type: uint256):
@@ -322,6 +331,7 @@ def submitPrep(_tableId: uint256, _seatIndex: uint256, _hash: bytes32):
   if numSubmitted == self.tables[_tableId].config.startsWith:
     D.finishSubmit(deckId)
     self.tables[_tableId].deckIndex = 0
+  self.tables[_tableId].commitBlock = block.number
 
 @external
 def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]):
@@ -341,7 +351,7 @@ def verifyPrep(_tableId: uint256, _seatIndex: uint256, _prep: CP[53]):
     self.tables[_tableId].deckIndex = 0
     self.tables[_tableId].phase = Phase_SHUF
     self.tables[_tableId].nextPhase = Phase_PLAY
-    self.tables[_tableId].commitBlock = block.number
+  self.tables[_tableId].commitBlock = block.number
 
 # shuffle
 
@@ -369,10 +379,10 @@ def submitShuffle(_tableId: uint256, _seatIndex: uint256,
   return D.respondChallenge(deckId, _seatIndex, _hash)
 
 @external
-def submitVerif(_tableId: uint256, _seatIndex: uint256,
-                _commitments: uint256[2][53][63],
-                _scalars: uint256[63],
-                _permutations: uint256[53][63]):
+def verifyShuffle(_tableId: uint256, _seatIndex: uint256,
+                  _commitments: uint256[2][53][63],
+                  _scalars: uint256[63],
+                  _permutations: uint256[53][63]):
   self.validatePhase(_tableId, Phase_SHUF)
   self.checkAuth(_tableId, _seatIndex)
   bit: uint256 = shift(1, _seatIndex)

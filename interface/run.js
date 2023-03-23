@@ -778,12 +778,12 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('submitVerif', async tableId => {
+  socket.on('verifyShuffle', async tableId => {
     try {
       const [commitment, scalars, permutations] = await verifyShuffle(socket, tableId)
       socket.emit('requestTransaction',
         await room.connect(socket.account).populateTransaction
-        .submitVerif(
+        .verifyShuffle(
           tableId, socket.activeGames[tableId].seatIndex,
           commitment, scalars, permutations, {
             maxFeePerGas: socket.feeData.maxFeePerGas,
