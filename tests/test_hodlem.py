@@ -66,6 +66,8 @@ def test_submit_prep_timeout(fn_isolation, room, game):
     tx = room.submitPrep(tableId, 1, 0x1, fee_args)
     chain.mine(prepBlocks + 1)
     assert chain.height > tx.block_number + prepBlocks, "mine harder"
+    with reverts("not submitted"):
+        room.verifyPrepTimeout(tableId, 0, fee_args)
     tx = room.submitPrepTimeout(tableId, 0, fee_args)
     assert tx.internal_transfers == [
             {"from": room.address, "to": "0x0000000000000000000000000000000000000000", "value": 300},
@@ -73,3 +75,39 @@ def test_submit_prep_timeout(fn_isolation, room, game):
     ]
     with reverts("wrong phase"):
         room.joinTable(tableId, 0, {"from": accounts[1], "value": "300 wei"} | fee_args)
+
+def test_submit_prep_timeout_self(fn_isolation, room, game):
+    prepBlocks = 2
+    tx = room.createTable(
+            1, (100, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2), game.address,
+            {"from": accounts[0], "value": "300 wei"} | fee_args)
+    tableId = tx.return_value
+    tx = room.joinTable(tableId, 0, {"from": accounts[1], "value": "300 wei"} | fee_args)
+    chain.mine(prepBlocks + 1)
+    assert chain.height > tx.block_number + prepBlocks, "mine harder"
+    tx = room.submitPrepTimeout(tableId, 1, fee_args)
+    assert tx.internal_transfers == [
+            {"from": room.address, "to": accounts[1], "value": 300},
+            {"from": room.address, "to": "0x0000000000000000000000000000000000000000", "value": 300},
+    ]
+
+def test_verify_prep_timeout(fn_isolation, room, game):
+    prepBlocks = 1
+    tx = room.createTable(
+            0, (300, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2), game.address,
+            {"from": accounts[0], "value": "500 wei"} | fee_args)
+    tableId = tx.return_value
+    tx = room.joinTable(tableId, 1, {"from": accounts[1], "value": "500 wei"} | fee_args)
+    tx = room.submitPrep(tableId, 0, 0x1, fee_args)
+    tx = room.submitPrep(tableId, 1, 0x2, {"from": accounts[1]} | fee_args)
+    chain.mine(prepBlocks + 1)
+    assert chain.height > tx.block_number + prepBlocks, "mine harder"
+    with reverts("already submitted"):
+        room.submitPrepTimeout(tableId, 0, fee_args)
+    tx = room.verifyPrepTimeout(tableId, 0, {"from": accounts[1]} | fee_args)
+    assert tx.internal_transfers == [
+            {"from": room.address, "to": "0x0000000000000000000000000000000000000000", "value": 500},
+            {"from": room.address, "to": accounts[1], "value": 500},
+    ]
+    with reverts("wrong phase"):
+        room.verifyPrepTimeout(tableId, 1, {"from": accounts[0]} | fee_args)
