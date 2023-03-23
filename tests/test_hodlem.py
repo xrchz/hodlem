@@ -1,6 +1,8 @@
-import pytest
+from brownie import accounts, network, reverts, chain, Deck, Room, Game
 import json
-from brownie import accounts, reverts, chain, Deck, Room, Game
+import os
+import pytest
+import subprocess
 
 fee_args = {"max_fee": "16 gwei", "priority_fee": "2 gwei"}
 
@@ -122,25 +124,53 @@ def test_verify_prep_timeout(fn_isolation, room, game):
         room.verifyPrepTimeout(tableId, 1, {"from": accounts[0]} | fee_args)
 
 @pytest.fixture(scope="module")
-def two_players_prepped(room, game):
+def two_players_prepped(deck, room, game):
     tx = room.createTable(
             0, (300, 500, 2, 1, [10, 20, 30, 40], 20, 4, 10, 10, 15, 10, 15), game.address,
             {"from": accounts[0], "value": "800 wei"} | fee_args)
     tableId = tx.return_value
     tx = room.joinTable(tableId, 1, {"from": accounts[1], "value": "800 wei"} | fee_args)
-    room.submitPrep(tableId, 0, '0x9514297892c9e1e0d69c800e248236c91d33ba9c7fbb33364d457bd0dd041f9c', fee_args)
-    room.submitPrep(tableId, 1, '0x0f9b47e0d799755d4d214e8533c69a2302d2e8347032138c76e92d83d8389d66', {"from": accounts[1]} | fee_args)
-    def str2num(x):
-        if type(x) == list:
-            return [str2num(y) for y in x]
-        else:
-            return int(x)
-    with open("tests/prep0.json", "r") as f:
-        prep0 = str2num(json.load(f))
-    with open("tests/prep1.json", "r") as f:
-        prep1 = str2num(json.load(f))
-    room.verifyPrep(tableId, 1, prep1, {"from": accounts[1]} | fee_args)
-    room.verifyPrep(tableId, 0, prep0, fee_args)
+
+    db_path = "tests/db.json"
+
+    try:
+        os.remove(db_path)
+    except FileNotFoundError:
+        pass
+
+    deckArgs = ["interface/deck.js", "--db", db_path,
+                "--rpc", network.web3.provider.endpoint_uri, "--deck", deck.address]
+
+    hash0 = subprocess.run(
+            deckArgs + ["--from", accounts[0].address, "submitPrep", "--id", "0"],
+            capture_output=True, check=True, text=True).stdout.strip()
+    room.submitPrep(tableId, 0, hash0, fee_args)
+
+    hash1 = subprocess.run(
+            deckArgs + ["--from", accounts[1].address, "submitPrep", "--id", "0"],
+            capture_output=True, check=True, text=True).stdout.strip()
+    room.submitPrep(tableId, 1, hash1, {"from": accounts[1]} | fee_args)
+
+    def readPrep(f):
+        a = []
+        def n():
+            return int(next(f), 16)
+        for _ in range(53):
+            a.append([[n(), n()], [n(), n()],
+                      [n(), n()], [n(), n()],
+                      [[n(), n()], [n(), n()], n()]])
+        return a
+
+    lines = iter(subprocess.run(
+        deckArgs + ["--from", accounts[0].address, "verifyPrep", "--id", "0"],
+        capture_output=True, check=True, text=True).stdout.splitlines())
+    room.verifyPrep(tableId, 0, readPrep(lines), fee_args)
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[1].address, "verifyPrep", "--id", "0"],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+    room.verifyPrep(tableId, 1, readPrep(lines), {"from": accounts[1]} | fee_args)
+
     return tableId
 
 def test_no_timeout_after_prep(fn_isolation, two_players_prepped, room):

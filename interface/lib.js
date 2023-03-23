@@ -14,7 +14,7 @@ function pointToUints(p) {
   return [a.x, a.y]
 }
 
-function bytesToHex(a) {
+export function bytesToHex(a) {
   return `0x${Array.from(a).map(i => i.toString(16).padStart(2, '0')).join('')}`
 }
 
@@ -56,7 +56,7 @@ function bigIntegersToPoint(a) {
   })
 }
 
-export async function submitPrep(socket, id) {
+export async function submitPrep(db, socket, id) {
   const key = `/${socket.account.address}/${id}/prep`
   const hash = new Uint8Array(32 + 3 * 64)
   for (const i of Array(53).keys()) {
