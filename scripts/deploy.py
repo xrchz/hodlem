@@ -1,21 +1,19 @@
-from brownie import accounts, Deck, Room, Game
+from ape import networks, accounts, project
 
-fee_args = {"max_fee": "16 gwei", "priority_fee": "2 gwei"}
+acc = accounts.test_accounts
 
 def deploy():
-    kwargs = {"from": accounts[0], **fee_args}
-    deck = Deck.deploy(kwargs)
-    room = Room.deploy(deck.address, kwargs)
-    game = Game.deploy(room.address, kwargs)
+    deck = project.Deck.deploy(sender=acc[0])
+    room = project.Room.deploy(deck.address, sender=acc[0])
+    game = project.Game.deploy(room.address, sender=acc[0])
+    return deck, room, game
 
 def main():
-    deploy()
-    with open("interface/.env", "a") as f:
-        f.write(f'DECK={Deck[0].address}\n')
-        f.write(f'ROOM={Room[0].address}\n')
-        f.write(f'GAME={Game[0].address}\n')
-    accounts[0].transfer(
-            to='0xCcbd1e8d367F6AC608b97260D8De9bad27C11ADc',
-            amount="6.9 ether",
-            max_fee="16 gwei",
-            priority_fee="2 gwei")
+    deck, room, game = deploy()
+    with open("interface/.env", "w") as f:
+        f.write(f'RPC={networks.active_provider.web3.provider.endpoint_uri}\n')
+        f.write(f'DECK={deck.address}\n')
+        f.write(f'ROOM={room.address}\n')
+        f.write(f'GAME={game.address}\n')
+    acc[0].transfer('0xCcbd1e8d367F6AC608b97260D8De9bad27C11ADc', '6.9 ether')
+    assert False, "avoid exiting: drop into interactive console"

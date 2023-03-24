@@ -1,0 +1,4 @@
+ethereum:
+  default_network: mainnet-fork
+foundry:
+  port: auto
