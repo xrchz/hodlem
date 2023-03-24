@@ -133,17 +133,13 @@ function hashCommitment(c) {
   return hash.slice(0, 32)
 }
 
-export async function shuffle(db, deck, socket, tableId) {
-  const data = socket.activeGames[tableId]
+export async function shuffleWithPermutation(db, deck, socket, tableId, permutation) {
   const config = socket.gameConfigs[tableId]
   const x = randomScalar()
   await db.push(`/${socket.account.address}/${tableId}/shuffle/secret`, x.toString())
-  const permutation = Array.from({length: 52}, (_, i) => i + 1)
-  shuffleArray(permutation)
   await db.push(`/${socket.account.address}/${tableId}/shuffle/permutation`, permutation)
   const lastCards = await deck.lastShuffle(config.deckId)
   permutation.unshift(0)
-  console.log(`created permutation: ${JSON.stringify(permutation)}`)
   const cards = permutation.map(i =>
     pointToUints(
       bigIntegersToPoint(lastCards[i]).multiply(x)
@@ -166,6 +162,12 @@ export async function shuffle(db, deck, socket, tableId) {
   await db.push(`/${socket.account.address}/${tableId}/shuffle/commitment`,
                 commitment.map(d => d.map(c => c.map(i => i.toString()))))
   return [cards, hashCommitment(commitment)]
+}
+
+export async function shuffle(db, deck, socket, tableId) {
+  const permutation = Array.from({length: 52}, (_, i) => i + 1)
+  shuffleArray(permutation)
+  return shuffleWithPermutation(db, deck, socket, tableId, permutation)
 }
 
 const emptyCommitment = Array.from({length: 53}, _ => [0, 0])

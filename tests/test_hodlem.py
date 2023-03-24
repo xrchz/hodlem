@@ -4,15 +4,15 @@ import os
 import pytest
 import subprocess
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def deck(project, accounts):
     return project.Deck.deploy(sender=accounts[0])
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def room(project, accounts, deck):
     return project.Room.deploy(deck.address, sender=accounts[0])
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def game(project, accounts, room):
     return project.Game.deploy(room.address, sender=accounts[0])
 
@@ -118,7 +118,7 @@ def test_verify_prep_timeout(accounts, chain, room, game):
     with reverts("wrong phase"):
         room.verifyPrepTimeout(tableId, 1, sender=accounts[0])
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def two_players_prepped(networks, accounts, deck, room, game):
     config = dict(
             buyIn=300,
@@ -148,15 +148,17 @@ def two_players_prepped(networks, accounts, deck, room, game):
         pass
 
     deckArgs = ["interface/deck.js", "--db", db_path,
-                "--rpc", networks.active_provider.web3.provider.endpoint_uri, "--deck", deck.address]
+                "--rpc", networks.active_provider.web3.provider.endpoint_uri,
+                "--deck", deck.address,
+                "--id", "0"]
 
     hash0 = subprocess.run(
-            deckArgs + ["--from", accounts[0].address, "submitPrep", "--id", "0"],
+            deckArgs + ["--from", accounts[0].address, "submitPrep"],
             capture_output=True, check=True, text=True).stdout.strip()
     room.submitPrep(tableId, 0, hash0, sender=accounts[0])
 
     hash1 = subprocess.run(
-            deckArgs + ["--from", accounts[1].address, "submitPrep", "--id", "0"],
+            deckArgs + ["--from", accounts[1].address, "submitPrep"],
             capture_output=True, check=True, text=True).stdout.strip()
     room.submitPrep(tableId, 1, hash1, sender=accounts[1])
 
@@ -171,16 +173,16 @@ def two_players_prepped(networks, accounts, deck, room, game):
         return a
 
     lines = iter(subprocess.run(
-        deckArgs + ["--from", accounts[0].address, "verifyPrep", "--id", "0"],
+        deckArgs + ["--from", accounts[0].address, "verifyPrep"],
         capture_output=True, check=True, text=True).stdout.splitlines())
     room.verifyPrep(tableId, 0, readPrep(lines), sender=accounts[0])
 
     lines = iter(subprocess.run(
-             deckArgs + ["--from", accounts[1].address, "verifyPrep", "--id", "0"],
+             deckArgs + ["--from", accounts[1].address, "verifyPrep"],
             stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
     room.verifyPrep(tableId, 1, readPrep(lines), sender=accounts[1])
 
-    return dict(tableId=tableId, config=config)
+    return dict(tableId=tableId, config=config, deckArgs=deckArgs)
 
 def test_no_timeout_after_prep(accounts, two_players_prepped, room):
     tableId = two_players_prepped["tableId"]
@@ -215,3 +217,52 @@ def test_submit_shuffle_timeout(accounts, chain, two_players_prepped, room):
     assert accounts[0].balance == acc0_prev_balance - (tx.gas_used * tx.gas_price)
     assert accounts[1].balance == acc1_prev_balance + value
     assert room.balance == room_prev_balance - value - value
+
+@pytest.fixture(scope="session")
+def two_players_selected_dealer(accounts, room, two_players_prepped):
+    #        1   2    3   4   5   6   7   8   9  10  11  12  13  14  15  16
+    perm0 = [32, 11,  4,  9,  8, 42,  1,  3,  5,  7, 22, 25, 51, 31, 30,  2,
+    #        17  18  19  20  21  22  23  24  25  26  27  28  29  30  31  32
+             13, 23, 50, 44, 33, 35, 27, 21, 16, 39, 43, 10, 19, 34,  6, 12,
+    #        33  34  35  36  37  38  39  40  41  42  43  44  45  46  47  48
+             28, 18, 36, 41, 52, 14, 48, 37, 24, 49, 17, 47, 20, 38, 40, 45,
+    #        49  50  51  52
+             46, 15, 26, 29]
+
+    perm1 = [ 7, 16,  8,  3,  9, 31, 10,  5,  4, 28,  2, 32, 17, 38, 50, 25,
+             43, 34, 29, 45, 24, 11, 18, 41, 12, 51, 23, 33, 52, 15, 14,  1,
+             21, 30, 22, 35, 40, 46, 26, 47, 36,  6, 27, 20, 48, 49, 44, 39,
+             42, 19, 13, 37]
+
+    tableId = two_players_prepped["tableId"]
+    deckArgs = two_players_prepped["deckArgs"]
+    config = two_players_prepped["config"]
+    verifRounds = config["verifRounds"]
+    deckId = room.configParams(tableId)[-1]
+
+    def readShuffle(f):
+        a = []
+        def n():
+            return int(next(f), 16)
+        for _ in range(53):
+            a.append([n(), n()])
+        return a
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[0].address, "shuffle",
+                         "-v", str(verifRounds), "-j", str(deckId),
+                         "--order", ','.join([str(n) for n in perm0])],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+
+    tx = room.submitShuffle(tableId, 0, readShuffle(lines), next(lines), sender=accounts[0])
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[1].address, "shuffle",
+                         "-v", str(verifRounds), "-j", str(deckId),
+                         "--order", ','.join([str(n) for n in perm1])],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+
+    tx = room.submitShuffle(tableId, 1, readShuffle(lines), next(lines), sender=accounts[1])
+
+def test_tmp_submit_shuffles(two_players_selected_dealer):
+    pass
