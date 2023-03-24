@@ -132,7 +132,7 @@ def playerLeaveLive(_tableId: uint256, _player: address):
 
 @internal
 @pure
-def ascending(_a: DynArray[uint256, MAX_LEVELS]) -> bool:
+def ascending(_a: DynArray[uint256, 100]) -> bool:
   x: uint256 = 0
   for y in _a:
     if y <= x:
@@ -197,7 +197,7 @@ def joinTable(_tableId: uint256, _seatIndex: uint256):
     for seatIndex in range(MAX_SEATS):
       if seatIndex == numPlayers: break
       player: address = self.tables[_tableId].seats[seatIndex]
-      self.tables[_tableId].present |= shift(1, seatIndex)
+      self.tables[_tableId].present |= shift(1, convert(seatIndex, int128)) # TODO: https://github.com/vyperlang/vyper/issues/3309
       self.nextLiveTable[player][_tableId] = self.nextLiveTable[player][0]
       self.nextLiveTable[player][0] = _tableId
       self.prevLiveTable[player][_tableId] = 0
@@ -385,7 +385,7 @@ def verifyShuffle(_tableId: uint256, _seatIndex: uint256,
                   _permutations: uint256[53][63]):
   self.validatePhase(_tableId, Phase_SHUF)
   self.checkAuth(_tableId, _seatIndex)
-  bit: uint256 = shift(1, _seatIndex)
+  bit: uint256 = shift(1, convert(_seatIndex, int128)) # TODO: https://github.com/vyperlang/vyper/issues/3309
   assert self.tables[_tableId].shuffled & bit == 0, "already verified"
   self.tables[_tableId].shuffled ^= bit
   for i in range(MAX_SECURITY):
@@ -404,7 +404,7 @@ def autoShuffle(_tableId: uint256):
     if seatIndex == self.tables[_tableId].config.startsWith:
       self.autoVerif(_tableId)
       break
-    if self.tables[_tableId].present & shift(1, seatIndex) == 0:
+    if self.tables[_tableId].present & shift(1, convert(seatIndex, int128)) == 0: # TODO: https://github.com/vyperlang/vyper/issues/3309
       # just copy the shuffle: use identity permutation and secret key = 1
       # do not challenge it; external challenges can just be ignored
       D.submitShuffle(deckId, seatIndex, D.lastShuffle(deckId))
@@ -415,7 +415,7 @@ def autoShuffle(_tableId: uint256):
 
 @internal
 def autoVerif(_tableId: uint256):
-  end: uint256 = shift(1, self.tables[_tableId].config.startsWith)
+  end: uint256 = shift(1, convert(self.tables[_tableId].config.startsWith, int128)) # TODO: https://github.com/vyperlang/vyper/issues/3309
   cur: uint256 = 1
   for _ in range(MAX_SEATS):
     if cur == end:
@@ -444,7 +444,7 @@ def reshuffle(_tableId: uint256):
 @external
 def markAbsent(_tableId: uint256, _seatIndex: uint256):
   self.gameAuth(_tableId)
-  self.tables[_tableId].present &= ~shift(1, _seatIndex)
+  self.tables[_tableId].present &= ~shift(1, convert(_seatIndex, int128)) # TODO: https://github.com/vyperlang/vyper/issues/3309
 
 # deal
 
@@ -471,7 +471,7 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
   for _ in range(MAX_SEATS):
     if seatIndex == self.tables[_tableId].config.startsWith:
       break
-    if self.tables[_tableId].present & shift(1, seatIndex) == 0:
+    if self.tables[_tableId].present & shift(1, convert(seatIndex, int128)) == 0: # TODO: https://github.com/vyperlang/vyper/issues/3309
       card: uint256[2] = D.lastDecrypt(deckId, _cardIndex)
       D.decryptCard(deckId, seatIndex, _cardIndex, card, D.emptyProof(card))
       seatIndex = unsafe_add(seatIndex, 1)
