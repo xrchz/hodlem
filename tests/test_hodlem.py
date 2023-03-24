@@ -5,6 +5,7 @@ import pytest
 import subprocess
 
 MAX_SECURITY = 63
+Phase_SHUF = 3
 
 @pytest.fixture(scope="session")
 def deck(project, accounts):
@@ -509,3 +510,67 @@ def test_split_pot(accounts, two_players_selected_dealer, room, game):
     assert show_event.event_arguments == {
             "table": tableId, "player": accounts[1].address,
             "card": 11, "show": 52}
+
+    game.callBet(tableId, 0, sender=accounts[0])
+    game.callBet(tableId, 1, sender=accounts[1])
+
+    with reverts("wrong turn"):
+        game.showCards(tableId, 1, sender=accounts[1])
+
+    with reverts("wrong turn"):
+        game.foldCards(tableId, 1, sender=accounts[1])
+
+    game.showCards(tableId, 0, sender=accounts[0])
+
+    tx = revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0,2], True)
+    show_event = tx.events[0]
+    assert show_event.event_name == "Show"
+    assert show_event.event_arguments == {
+            "table": tableId, "player": accounts[0].address,
+            "card": 0, "show": 1}
+    show_event = tx.events[1]
+    assert show_event.event_name == "Show"
+    assert show_event.event_arguments == {
+            "table": tableId, "player": accounts[0].address,
+            "card": 2, "show": 3}
+
+    rank = (9 << (5 * 8)) + (12 << (4 * 8))
+
+    game.showCards(tableId, 1, sender=accounts[1])
+    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1,3], True)
+    show_event = tx.events[0]
+    assert show_event.event_name == "Show"
+    assert show_event.event_arguments == {
+            "table": tableId, "player": accounts[1].address,
+            "card": 1, "show": 2}
+    show_event = tx.events[1]
+    assert show_event.event_name == "Show"
+    assert show_event.event_arguments == {
+            "table": tableId, "player": accounts[1].address,
+            "card": 3, "show": 4}
+    show_event = tx.events[2]
+    assert show_event.event_name == "ShowHand"
+    assert show_event.event_arguments == {
+            "table": tableId, "seat": 0, "rank": rank }
+    show_event = tx.events[3]
+    assert show_event.event_name == "ShowHand"
+    assert show_event.event_arguments == {
+            "table": tableId, "seat": 1, "rank": rank }
+
+    config = two_players_selected_dealer["config"]
+    smallBlind = config["structure"][0]
+    bigBlind = smallBlind * 2
+    pot = bigBlind * 2
+    share = pot // 2
+
+    collect_event = tx.events[4]
+    assert collect_event.event_name == "CollectPot"
+    assert collect_event.event_arguments == {"table": tableId, "seat": 0, "pot": share}
+
+    collect_event = tx.events[5]
+    assert collect_event.event_name == "CollectPot"
+    assert collect_event.event_arguments == {"table": tableId, "seat": 1, "pot": share}
+
+    assert share + share == pot, "two players always split evenly"
+
+    assert room.phaseCommit(tableId)[0] == Phase_SHUF, "onto shuffle for next hand"

@@ -346,6 +346,7 @@ def afterShow(_tableId: uint256):
       log ShowHand(_tableId, contestantIndex, handRank)
       if bestHandRank < handRank:
         winners = [contestantIndex]
+        bestHandRank = handRank
       elif bestHandRank == handRank:
         winners.append(contestantIndex)
     share: uint256 = unsafe_div(self.games[_tableId].pot[potIndex], len(winners))
