@@ -125,11 +125,25 @@ def test_verify_prep_timeout(fn_isolation, room, game):
 
 @pytest.fixture(scope="module")
 def two_players_prepped(deck, room, game):
+    config = dict(
+            buyIn=300,
+            bond=500,
+            startsWith=2,
+            untilLeft=1,
+            structure=(10, 20, 30, 40),
+            levelBlocks=20,
+            verifRounds=4,
+            prepBlocks=10,
+            shuffBlocks=10,
+            verifBlocks=15,
+            dealBlocks=10,
+            actBlocks=15)
+    value = f"{config['bond'] + config['buyIn']} wei"
     tx = room.createTable(
-            0, (300, 500, 2, 1, [10, 20, 30, 40], 20, 4, 10, 10, 15, 10, 15), game.address,
-            {"from": accounts[0], "value": "800 wei"} | fee_args)
+            0, tuple(config.values()), game.address,
+            {"from": accounts[0], "value": value} | fee_args)
     tableId = tx.return_value
-    tx = room.joinTable(tableId, 1, {"from": accounts[1], "value": "800 wei"} | fee_args)
+    tx = room.joinTable(tableId, 1, {"from": accounts[1], "value": value} | fee_args)
 
     db_path = "tests/db.json"
 
@@ -171,11 +185,36 @@ def two_players_prepped(deck, room, game):
             stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
     room.verifyPrep(tableId, 1, readPrep(lines), {"from": accounts[1]} | fee_args)
 
-    return tableId
+    return dict(tableId=tableId, config=config)
 
 def test_no_timeout_after_prep(fn_isolation, two_players_prepped, room):
-    tableId = two_players_prepped
+    tableId = two_players_prepped["tableId"]
     with reverts("wrong phase"):
         room.submitPrepTimeout(tableId, 0, fee_args)
     with reverts("wrong phase"):
         room.verifyPrepTimeout(tableId, 1, fee_args)
+
+def test_no_leave_after_prep(fn_isolation, two_players_prepped, room):
+    tableId = two_players_prepped["tableId"]
+    with reverts("wrong phase"):
+        room.leaveTable(tableId, 0, fee_args)
+
+def test_no_refund_delete(fn_isolation, two_players_prepped, room):
+    tableId = two_players_prepped["tableId"]
+    with reverts("unauthorised"):
+        room.refundPlayer(tableId, 0, 100, fee_args)
+    with reverts("unauthorised"):
+        room.deleteTable(tableId, fee_args)
+
+def test_submit_shuffle_timeout(fn_isolation, two_players_prepped, room):
+    tableId = two_players_prepped["tableId"]
+    shuffBlocks = two_players_prepped["config"]["shuffBlocks"]
+    value = two_players_prepped["config"]["bond"] + two_players_prepped["config"]["buyIn"]
+    block_number = chain.height
+    chain.mine(shuffBlocks + 1)
+    assert chain.height > block_number + shuffBlocks, "mine harder"
+    tx = room.submitShuffleTimeout(tableId, 0, fee_args)
+    assert tx.internal_transfers == [
+            {"from": room.address, "to": "0x0000000000000000000000000000000000000000", "value": value},
+            {"from": room.address, "to": accounts[1], "value": value},
+    ]
