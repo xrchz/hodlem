@@ -296,21 +296,24 @@ def readIntLists(f, z):
             break
     return a
 
-@pytest.fixture(scope="session")
-def two_players_selected_dealer(accounts, room, two_players_prepped):
+two_players_empty_shuffle = (
     #        1   2    3   4   5   6   7   8   9  10  11  12  13  14  15  16
-    perm0 = [32, 11,  4,  9,  8, 42,  1,  3,  5,  7, 22, 25, 51, 31, 30,  2,
+            [32, 11,  4,  9,  8, 42,  1,  3,  5,  7, 22, 25, 51, 31, 30,  2,
     #        17  18  19  20  21  22  23  24  25  26  27  28  29  30  31  32
              13, 23, 50, 44, 33, 35, 27, 21, 16, 39, 43, 10, 19, 34,  6, 12,
     #        33  34  35  36  37  38  39  40  41  42  43  44  45  46  47  48
              28, 18, 36, 41, 52, 14, 48, 37, 24, 49, 17, 47, 20, 38, 40, 45,
     #        49  50  51  52
-             46, 15, 26, 29]
-
-    perm1 = [ 7, 16,  8,  3,  9, 31, 10,  5,  4, 28,  2, 32, 17, 38, 50, 25,
+             46, 15, 26, 29],
+            [ 7, 16,  8,  3,  9, 31, 10,  5,  4, 28,  2, 32, 17, 38, 50, 25,
              43, 34, 29, 45, 24, 11, 18, 41, 12, 51, 23, 33, 52, 15, 14,  1,
              21, 30, 22, 35, 40, 46, 26, 47, 36,  6, 27, 20, 48, 49, 44, 39,
              42, 19, 13, 37]
+    )
+
+@pytest.fixture(scope="session")
+def two_players_selected_dealer(accounts, room, two_players_prepped):
+    perm0, perm1 = two_players_empty_shuffle
 
     two_players_shuffle(accounts, two_players_prepped, room, perm0, perm1)
 
@@ -351,6 +354,13 @@ def two_players_selected_dealer(accounts, room, two_players_prepped):
 def test_select_dealer(accounts, two_players_selected_dealer, game):
     tableId = two_players_selected_dealer["tableId"]
     assert game.games(tableId)['dealer'] == 1
+    show_event = two_players_selected_dealer["revealCards0"].events[0]
+    assert show_event.event_name == "Show"
+    assert show_event.event_arguments == {
+            "table": tableId,
+            "player": accounts[0].address,
+            "card": 0,
+            "show": 1}
     show_event = two_players_selected_dealer["revealCards1"].events[0]
     assert show_event.event_name == "Show"
     assert show_event.event_arguments == {
@@ -359,21 +369,7 @@ def test_select_dealer(accounts, two_players_selected_dealer, game):
             "card": 1,
             "show": 2}
 
-def test_fold_blind(accounts, two_players_selected_dealer, room, game):
-    #        1   2    3   4   5   6   7   8   9  10  11  12  13  14  15  16
-    perm0 = [32, 11,  4,  9,  8, 42,  1,  3,  5,  7, 22, 25, 51, 31, 30,  2,
-    #        17  18  19  20  21  22  23  24  25  26  27  28  29  30  31  32
-             13, 23, 50, 44, 33, 35, 27, 21, 16, 39, 43, 10, 19, 34,  6, 12,
-    #        33  34  35  36  37  38  39  40  41  42  43  44  45  46  47  48
-             28, 18, 36, 41, 52, 14, 48, 37, 24, 49, 17, 47, 20, 38, 40, 45,
-    #        49  50  51  52
-             46, 15, 26, 29]
-
-    perm1 = [ 7, 16,  8,  3,  9, 31, 10,  5,  4, 28,  2, 32, 17, 38, 50, 25,
-             43, 34, 29, 45, 24, 11, 18, 41, 12, 51, 23, 33, 52, 15, 14,  1,
-             21, 30, 22, 35, 40, 46, 26, 47, 36,  6, 27, 20, 48, 49, 44, 39,
-             42, 19, 13, 37]
-
+def two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1):
     two_players_shuffle(accounts, two_players_selected_dealer, room, perm0, perm1)
 
     tableId = two_players_selected_dealer["tableId"]
@@ -393,6 +389,13 @@ def test_fold_blind(accounts, two_players_selected_dealer, room, game):
                          "-j", str(deckId), "-s", '1'],
             stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
     tx = room.decryptCards(tableId, 1, readIntLists(lines, 8), True, sender=accounts[1])
+
+def test_fold_blind(accounts, two_players_selected_dealer, room, game):
+    perm0, perm1 = two_players_empty_shuffle
+
+    two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1)
+
+    tableId = two_players_selected_dealer["tableId"]
 
     with reverts("unauthorised"):
         game.fold(tableId, 1, sender=accounts[0])
@@ -417,3 +420,32 @@ def test_fold_blind(accounts, two_players_selected_dealer, room, game):
 
     assert game.games(tableId)["stack"][0] == config["buyIn"] - smallBlind
     assert game.games(tableId)["stack"][1] == config["buyIn"] + smallBlind
+
+def test_dealer_fold_blind(accounts, two_players_selected_dealer, room, game):
+    perm0, perm1 = two_players_empty_shuffle
+
+    two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1)
+
+    tableId = two_players_selected_dealer["tableId"]
+
+    tx = game.callBet(tableId, 0, sender=accounts[0])
+
+    tx = game.fold(tableId, 1, sender=accounts[1])
+
+    config = two_players_selected_dealer["config"]
+
+    smallBlind = config["structure"][0]
+    bigBlind = smallBlind * 2
+    pot = bigBlind * 2
+
+    fold_event = tx.events[0]
+    assert fold_event.event_name == "Fold"
+    assert fold_event.event_arguments == {"table": tableId, "seat": 1}
+
+    collect_event = tx.events[1]
+    assert collect_event.event_name == "CollectPot"
+    assert collect_event.event_arguments == {"table": tableId, "seat": 0, "pot": pot}
+
+    assert game.games(tableId)["stack"][0] == config["buyIn"] + bigBlind
+    assert game.games(tableId)["stack"][1] == config["buyIn"] - bigBlind
+
