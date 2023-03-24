@@ -1,6 +1,8 @@
 import { bn254 } from '@noble/curves/bn'
 import { invert } from '@noble/curves/abstract/modular'
 
+const MAX_SECURITY = 63
+
 function randomPoint() {
   return bn254.ProjectivePoint.fromPrivateKey(bn254.utils.randomPrivateKey())
 }

@@ -4,6 +4,8 @@ import os
 import pytest
 import subprocess
 
+MAX_SECURITY = 63
+
 @pytest.fixture(scope="session")
 def deck(project, accounts):
     return project.Deck.deploy(sender=accounts[0])
@@ -264,5 +266,82 @@ def two_players_selected_dealer(accounts, room, two_players_prepped):
 
     tx = room.submitShuffle(tableId, 1, readShuffle(lines), next(lines), sender=accounts[1])
 
-def test_tmp_submit_shuffles(two_players_selected_dealer):
-    pass
+    def readVerification(f):
+        c = []
+        s = []
+        p = []
+        def n():
+            return int(next(f), 16)
+        for _ in range(MAX_SECURITY):
+            d = []
+            for _ in range(53):
+                d.append([n(), n()])
+            c.append(d)
+        for _ in range(MAX_SECURITY):
+            s.append(n())
+        for _ in range(MAX_SECURITY):
+            d = []
+            for _ in range(53):
+                d.append(n())
+            p.append(d)
+        return c, s, p
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[0].address, "verifyShuffle",
+                         "-j", str(deckId), "-s", '0'],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+    c, s, p = readVerification(lines)
+    tx = room.verifyShuffle(tableId, 0, c, s, p, sender=accounts[0])
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[1].address, "verifyShuffle",
+                         "-j", str(deckId), "-s", '1'],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+    c, s, p = readVerification(lines)
+    tx = room.verifyShuffle(tableId, 1, c, s, p, sender=accounts[1])
+
+    def readLines(f, z):
+        a = []
+        def n():
+            return int(next(f), 16)
+        for _ in range(26):
+            try:
+                a.append([n() for _ in range(z)])
+            except StopIteration:
+                break
+        return a
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[0].address, "decryptCards",
+                         "--indices", "0,1", "--draw-indices", "0,1",
+                         "-j", str(deckId), "-s", '0'],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+    tx = room.decryptCards(tableId, 0, readLines(lines, 8), False, sender=accounts[0])
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[1].address, "decryptCards",
+                         "--indices", "0,1", "--draw-indices", "0,1",
+                         "-j", str(deckId), "-s", '1'],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+    tx = room.decryptCards(tableId, 1, readLines(lines, 8), False, sender=accounts[1])
+
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[0].address, "revealCards",
+                         "--indices", "0",
+                         "-j", str(deckId), "-s", '0'],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+    tx = room.revealCards(tableId, 0, readLines(lines, 7), False, sender=accounts[0])
+
+    lines = iter(subprocess.run(
+             deckArgs + ["--from", accounts[1].address, "revealCards",
+                         "--indices", "1",
+                         "-j", str(deckId), "-s", '1'],
+            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
+    tx = room.revealCards(tableId, 1, readLines(lines, 7), True, sender=accounts[1])
+
+    return two_players_prepped
+
+def test_select_dealer(two_players_selected_dealer, game):
+    tableId = two_players_selected_dealer["tableId"]
+    assert game.games(tableId)['dealer'] == 1

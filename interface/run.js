@@ -136,7 +136,6 @@ async function getActiveGames(socket) {
   return tableIds
 }
 
-const MAX_SECURITY = 63
 const Phase_PREP = 2
 const Phase_SHUF = 3
 const Phase_DEAL = 4
