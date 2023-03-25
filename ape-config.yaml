@@ -1,4 +1,6 @@
 ethereum:
   default_network: mainnet-fork
+  local:
+    default_provider: foundry
 foundry:
   port: auto
