@@ -718,13 +718,18 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, deckArgs
     assert event.event_name == "CollectPot"
     assert event.event_arguments == {"table": tableId, "seat": 1, "pot": buyIn}
 
-def test_three_players_deal_timeout(accounts, chain, three_players_prepped, deckArgs, room):
+@pytest.fixture(scope="session")
+def three_players_arbitrary_shuffled(
+        accounts, three_players_prepped, deckArgs, room):
     perm0, perm1 = two_players_empty_shuffle
     three_players_shuffle(accounts, three_players_prepped, deckArgs, room, [perm0, perm1, perm0])
-    tableId = three_players_prepped["tableId"]
+    return three_players_prepped
+
+def test_three_players_deal_timeout(accounts, chain, three_players_arbitrary_shuffled, deckArgs, room):
+    tableId = three_players_arbitrary_shuffled["tableId"]
     with reverts("deadline not passed"):
         room.decryptTimeout(tableId, 0, 0, sender=accounts[1])
-    dealBlocks = three_players_prepped["config"]["dealBlocks"]
+    dealBlocks = three_players_arbitrary_shuffled["config"]["dealBlocks"]
     chain.mine(dealBlocks)
     tx = room.decryptTimeout(tableId, 0, 0, sender=accounts[1])
     assert len(tx.events) == 5
@@ -740,3 +745,104 @@ def test_three_players_deal_timeout(accounts, chain, three_players_prepped, deck
     assert tx.events[3].event_name == "LeaveTable"
     assert tx.events[4].event_name == "EndGame"
     assert tx.events[4].event_arguments == {"table": tableId}
+
+@pytest.fixture(scope="session")
+def three_players_selected_dealer(accounts, room, three_players_arbitrary_shuffled, deckArgs):
+    tableId = three_players_arbitrary_shuffled["tableId"]
+    deckId = room.configParams(tableId)[-1]
+
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0,1,2], [0,1,2])
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, [0,1,2], [0,1,2])
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, [0,1,2], [0,1,2])
+
+    revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0])
+    revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1])
+    revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2], True)
+
+    return three_players_arbitrary_shuffled
+
+def test_uneven_split(accounts, room, game, deckArgs, three_players_selected_dealer):
+    config = three_players_selected_dealer["config"]
+    tableId = three_players_selected_dealer["tableId"]
+    deckId = room.configParams(tableId)[-1]
+    smallBlind = config["structure"][0]
+    bigBlind = smallBlind * 2
+
+    three_players_shuffle(accounts, three_players_selected_dealer, deckArgs, room,
+                          two_players_empty_shuffle + (list(range(1, 53)),))
+    holeCards = [0,1,2,3,4,5]
+    drawnTo = [2,0,1,2,0,1]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, holeCards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, holeCards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, holeCards, drawnTo, True)
+
+    with reverts("wrong turn"):
+        game.raiseBet(tableId, 0, 1, sender=accounts[0])
+
+    with reverts("not a bet/raise"):
+        game.raiseBet(tableId, 1, 1, sender=accounts[1])
+
+    with reverts("below minimum"):
+        game.raiseBet(tableId, 1, bigBlind + smallBlind, sender=accounts[1])
+
+    tx = game.raiseBet(tableId, 1, bigBlind + bigBlind + 1, sender=accounts[1])
+    assert len(tx.events) == 1
+    assert tx.events[0].event_name == "RaiseBet"
+    assert tx.events[0].event_arguments == {
+            "table": tableId, "seat": 1,
+            "bet": bigBlind * 2 + 1, "placed": bigBlind * 2 + 1
+            }
+
+    tx = game.callBet(tableId, 2, sender=accounts[2])
+    assert len(tx.events) == 1
+    assert tx.events[0].event_name == "CallBet"
+    assert tx.events[0].event_arguments == {
+            "table": tableId, "seat": 2,
+            "bet": bigBlind * 2 + 1, "placed": smallBlind + bigBlind + 1}
+
+    tx = game.callBet(tableId, 0, sender=accounts[0])
+    assert len(tx.events) == 2
+    assert tx.events[0].event_name == "CallBet"
+    assert tx.events[0].event_arguments == {
+            "table": tableId, "seat": 0,
+            "bet": bigBlind * 2 + 1, "placed": bigBlind + 1}
+    assert tx.events[1].event_name == "DealRound"
+    assert tx.events[1].event_arguments == {"table": tableId, "street": 2}
+
+    flop = [7,8,9]
+    drawnTo = [1,1,1]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, flop, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, flop, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, flop, drawnTo)
+    revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, flop, True)
+
+    game.callBet(tableId, 2, sender=accounts[2])
+    game.callBet(tableId, 0, sender=accounts[0])
+    tx = game.fold(tableId, 1, sender=accounts[1])
+    assert len(tx.events) == 2
+    assert tx.events[0].event_name == "Fold"
+    assert tx.events[0].event_arguments == {"table": tableId, "seat": 1}
+
+    turn = [11]
+    drawnTo = [1]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, turn, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, turn, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, turn, drawnTo)
+    revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, turn, True)
+
+    game.callBet(tableId, 2, sender=accounts[2])
+    tx = game.callBet(tableId, 0, sender=accounts[0])
+    with reverts("unauthorised"):
+        game.callBet(tableId, 1, sender=accounts[1])
+    assert len(tx.events) == 2
+    assert tx.events[1].event_name == "DealRound"
+    assert tx.events[1].event_arguments == {"table": tableId, "street": 4}
+
+    river = [13]
+    drawnTo = [1]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, river, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, river, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, river, drawnTo)
+    revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, river, True)
+
+    assert False, "wip"
