@@ -907,3 +907,79 @@ def test_uneven_split(accounts, room, game, deckArgs, three_players_selected_dea
     assert collect_event.event_name == "CollectPot"
     assert collect_event.event_arguments == {
             "table": tableId, "seat": 2, "pot": bigBlind * 3 + 1}
+
+def test_side_pot(accounts, three_players_selected_dealer, deckArgs, room, game):
+    # one player all-in, the other two keep betting
+    # (first need one hand to establish a short stack)
+    config = three_players_selected_dealer["config"]
+    tableId = three_players_selected_dealer["tableId"]
+    deckId = room.configParams(tableId)[-1]
+    smallBlind = config["structure"][0]
+    bigBlind = smallBlind * 2
+
+    perm = list(range(1, 53))
+
+    three_players_shuffle(accounts, three_players_selected_dealer, deckArgs, room,
+                          two_players_empty_shuffle + (perm,))
+    cards   = [0,1,2,3,4,5]
+    drawnTo = [2,0,1,2,0,1]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo, True)
+
+    game.raiseBet(tableId, 1, bigBlind * 3, sender=accounts[1])
+    game.callBet(tableId, 2, sender=accounts[2])
+    game.fold(tableId, 0, sender=accounts[0])
+
+    cards   = [7,8,9]
+    drawnTo = [1,1,1]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo)
+    revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, True)
+
+    game.callBet(tableId, 2, sender=accounts[2])
+    game.raiseBet(tableId, 1, bigBlind * 3, sender=accounts[1])
+    game.callBet(tableId, 2, sender=accounts[2])
+
+    cards   = [11]
+    drawnTo = [1]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo)
+    revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, True)
+
+    tx = game.fold(tableId, 2, sender=accounts[2])
+
+    assert len(tx.events) == 2
+    assert tx.events[1].event_name == "CollectPot"
+    pot = bigBlind + 2 * (bigBlind * 3 * 2)
+    assert tx.events[1].event_arguments == {
+            "table": tableId, "seat": 1, "pot": pot}
+
+    # 1 is up 7BB, 2 is down 6BB, 0 is down 1BB
+
+    # now 2 is dealer
+    three_players_shuffle(accounts, three_players_selected_dealer, deckArgs, room,
+                          (perm,) + two_players_empty_shuffle)
+    cards   = [0,1,2,3,4,5]
+    drawnTo = [0,1,2,0,1,2]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo, True)
+
+    buyIn = config["buyIn"]
+    game.raiseBet(tableId, 2, buyIn - 6 * bigBlind, sender=accounts[2])
+    game.callBet(tableId, 0, sender=accounts[0])
+    game.callBet(tableId, 1, sender=accounts[1])
+
+    cards   = [7,8,9]
+    drawnTo = [2,2,2]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo)
+    revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, True)
+
+    game.callBet(tableId, 0, sender=accounts[0])
+    game.raiseBet(tableId, 1, bigBlind, sender=accounts[1])
+    game.callBet(tableId, 0, sender=accounts[0])
