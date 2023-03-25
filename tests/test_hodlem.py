@@ -574,3 +574,35 @@ def test_split_pot(accounts, two_players_selected_dealer, room, game):
     assert share + share == pot, "two players always split evenly"
 
     assert room.phaseCommit(tableId)[0] == Phase_SHUF, "onto shuffle for next hand"
+
+def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, room, game):
+    perm0, perm1 = two_players_empty_shuffle
+
+    two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1)
+
+    tableId = two_players_selected_dealer["tableId"]
+    config = two_players_selected_dealer["config"]
+
+    game.callBet(tableId, 0, sender=accounts[0])
+
+    with reverts("size exceeds stack"):
+        game.raiseBet(tableId, 1, config["buyIn"] + 1, sender=accounts[1])
+
+    tx = game.raiseBet(tableId, 1, config["buyIn"], sender=accounts[1])
+
+    smallBlind = config["structure"][0]
+    bigBlind = smallBlind * 2
+
+    raise_event = tx.events[0]
+    assert raise_event.event_name == "RaiseBet"
+    assert raise_event.event_arguments == {
+            "table": tableId,
+            "seat": 1,
+            "bet": config["buyIn"],
+            "placed": config["buyIn"] - bigBlind}
+
+    tx = game.callBet(tableId, 0, sender=accounts[0])
+
+    round_event = tx.events[1]
+    assert round_event.event_name == "DealRound"
+    assert round_event.event_arguments == {"table": tableId, "street": 2}
