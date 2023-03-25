@@ -396,7 +396,6 @@ def test_fold_blind(accounts, two_players_selected_dealer, room, game):
     config = two_players_selected_dealer["config"]
 
     smallBlind = config["structure"][0]
-    pot = smallBlind * 3
 
     fold_event = tx.events[0]
     assert fold_event.event_name == "Fold"
@@ -404,7 +403,9 @@ def test_fold_blind(accounts, two_players_selected_dealer, room, game):
 
     collect_event = tx.events[1]
     assert collect_event.event_name == "CollectPot"
-    assert collect_event.event_arguments == {"table": tableId, "seat": 1, "pot": pot}
+    assert collect_event.event_arguments == {"table": tableId, "seat": 1, "pot": smallBlind * 3}
+
+    assert len(tx.events) == 2
 
     assert game.games(tableId)["stack"][0] == config["buyIn"] - smallBlind
     assert game.games(tableId)["stack"][1] == config["buyIn"] + smallBlind
