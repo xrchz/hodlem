@@ -122,7 +122,41 @@ def test_verify_prep_timeout(accounts, chain, room, game):
         room.verifyPrepTimeout(tableId, 1, sender=accounts[0])
 
 @pytest.fixture(scope="session")
-def two_players_prepped(networks, accounts, deck, room, game):
+def deckArgs(networks, deck):
+    db_path = "tests/db.json"
+    try:
+        os.remove(db_path)
+    except FileNotFoundError:
+        pass
+    return ["interface/deck.js", "--db", db_path,
+            "--rpc", networks.active_provider.web3.provider.endpoint_uri,
+            "--deck", deck.address,
+            "--id", "0"]
+
+def submitPrep(deckArgs, account, room, tableId, seatIndex):
+    result = subprocess.run(
+                 deckArgs + ["--from", account.address, "submitPrep"],
+                 capture_output=True, check=True, text=True).stdout.strip()
+    return room.submitPrep(tableId, seatIndex, result, sender=account)
+
+def verifyPrep(deckArgs, account, room, tableId, seatIndex):
+    def readPrep(f):
+        a = []
+        def n():
+            return int(next(f), 16)
+        for _ in range(53):
+            a.append(dict(g=[n(), n()], h=[n(), n()],
+                          gx=[n(), n()], hx=[n(), n()],
+                          p=([n(), n()], [n(), n()], n())))
+        return a
+
+    lines = iter(subprocess.run(
+        deckArgs + ["--from", account.address, "verifyPrep"],
+        capture_output=True, check=True, text=True).stdout.splitlines())
+    return room.verifyPrep(tableId, seatIndex, readPrep(lines), sender=account)
+
+@pytest.fixture(scope="session")
+def two_players_prepped(networks, accounts, deck, room, game, deckArgs):
     config = dict(
             buyIn=300,
             bond=500,
@@ -143,49 +177,42 @@ def two_players_prepped(networks, accounts, deck, room, game):
     tableId = tx.return_value
     tx = room.joinTable(tableId, 1, sender=accounts[1], value=value)
 
-    db_path = "tests/db.json"
+    submitPrep(deckArgs, accounts[0], room, tableId, 0)
+    submitPrep(deckArgs, accounts[1], room, tableId, 1)
+    verifyPrep(deckArgs, accounts[0], room, tableId, 0)
+    verifyPrep(deckArgs, accounts[1], room, tableId, 1)
 
-    try:
-        os.remove(db_path)
-    except FileNotFoundError:
-        pass
+    return dict(tableId=tableId, config=config)
 
-    deckArgs = ["interface/deck.js", "--db", db_path,
-                "--rpc", networks.active_provider.web3.provider.endpoint_uri,
-                "--deck", deck.address,
-                "--id", "0"]
+@pytest.fixture(scope="session")
+def three_players_prepped(networks, accounts, deck, room, game, deckArgs):
+    config = dict(
+            buyIn=1000,
+            bond=5000000,
+            startsWith=2,
+            untilLeft=1,
+            structure=[50, 100, 200, 400, 800],
+            levelBlocks=50,
+            verifRounds=3,
+            prepBlocks=20,
+            shuffBlocks=25,
+            verifBlocks=35,
+            dealBlocks=15,
+            actBlocks=10)
+    value = f"{config['bond'] + config['buyIn']} wei"
+    tx = room.createTable(0, config, game.address, sender=accounts[0], value=value)
+    tableId = tx.return_value
+    tx = room.joinTable(tableId, 2, sender=accounts[2], value=value)
+    tx = room.joinTable(tableId, 1, sender=accounts[1], value=value)
 
-    hash0 = subprocess.run(
-            deckArgs + ["--from", accounts[0].address, "submitPrep"],
-            capture_output=True, check=True, text=True).stdout.strip()
-    room.submitPrep(tableId, 0, hash0, sender=accounts[0])
+    submitPrep(deckArgs, accounts[0], room, tableId, 0)
+    submitPrep(deckArgs, accounts[1], room, tableId, 1)
+    submitPrep(deckArgs, accounts[2], room, tableId, 2)
+    verifyPrep(deckArgs, accounts[2], room, tableId, 2)
+    verifyPrep(deckArgs, accounts[1], room, tableId, 1)
+    verifyPrep(deckArgs, accounts[0], room, tableId, 0)
 
-    hash1 = subprocess.run(
-            deckArgs + ["--from", accounts[1].address, "submitPrep"],
-            capture_output=True, check=True, text=True).stdout.strip()
-    room.submitPrep(tableId, 1, hash1, sender=accounts[1])
-
-    def readPrep(f):
-        a = []
-        def n():
-            return int(next(f), 16)
-        for _ in range(53):
-            a.append(dict(g=[n(), n()], h=[n(), n()],
-                          gx=[n(), n()], hx=[n(), n()],
-                          p=([n(), n()], [n(), n()], n())))
-        return a
-
-    lines = iter(subprocess.run(
-        deckArgs + ["--from", accounts[0].address, "verifyPrep"],
-        capture_output=True, check=True, text=True).stdout.splitlines())
-    room.verifyPrep(tableId, 0, readPrep(lines), sender=accounts[0])
-
-    lines = iter(subprocess.run(
-             deckArgs + ["--from", accounts[1].address, "verifyPrep"],
-            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
-    room.verifyPrep(tableId, 1, readPrep(lines), sender=accounts[1])
-
-    return dict(tableId=tableId, config=config, deckArgs=deckArgs)
+    return dict(tableId=tableId, config=config)
 
 def test_no_timeout_after_prep(accounts, two_players_prepped, room):
     tableId = two_players_prepped["tableId"]
@@ -221,10 +248,9 @@ def test_submit_shuffle_timeout(accounts, chain, two_players_prepped, room):
     assert accounts[1].balance == acc1_prev_balance + value
     assert room.balance == room_prev_balance - value - value
 
-def two_players_shuffle(accounts, two_players_prepped, room, perm0, perm1):
+def two_players_shuffle(accounts, two_players_prepped, deckArgs, room, perm0, perm1):
     tableId = two_players_prepped["tableId"]
     deckId = room.configParams(tableId)[-1]
-    deckArgs = two_players_prepped["deckArgs"]
     config = two_players_prepped["config"]
     verifRounds = config["verifRounds"]
 
@@ -330,14 +356,13 @@ def revealCards(deckArgs, deckId, seatIndex, account, tableId, room, indices, en
     return room.revealCards(tableId, seatIndex, readIntLists(lines, 7), end, sender=account)
 
 @pytest.fixture(scope="session")
-def two_players_selected_dealer(accounts, room, two_players_prepped):
+def two_players_selected_dealer(accounts, room, two_players_prepped, deckArgs):
     perm0, perm1 = two_players_empty_shuffle
 
-    two_players_shuffle(accounts, two_players_prepped, room, perm0, perm1)
+    two_players_shuffle(accounts, two_players_prepped, deckArgs, room, perm0, perm1)
 
     tableId = two_players_prepped["tableId"]
     deckId = room.configParams(tableId)[-1]
-    deckArgs = two_players_prepped["deckArgs"]
 
     decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0,1], [0,1])
     decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, [0,1], [0,1])
@@ -368,20 +393,19 @@ def test_select_dealer(accounts, two_players_selected_dealer, game):
 def is_permutation(perm):
     return set(perm) == set(range(1, 53))
 
-def two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1):
-    two_players_shuffle(accounts, two_players_selected_dealer, room, perm0, perm1)
+def two_players_hole_cards(accounts, two_players_selected_dealer, deckArgs, room, perm0, perm1):
+    two_players_shuffle(accounts, two_players_selected_dealer, deckArgs, room, perm0, perm1)
 
     tableId = two_players_selected_dealer["tableId"]
     deckId = room.configParams(tableId)[-1]
-    deckArgs = two_players_selected_dealer["deckArgs"]
 
     decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0,1,2,3], [0,1,0,1])
     decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, [0,1,2,3], [0,1,0,1], True)
 
-def test_fold_blind(accounts, two_players_selected_dealer, room, game):
+def test_fold_blind(accounts, two_players_selected_dealer, deckArgs, room, game):
     perm0, perm1 = two_players_empty_shuffle
 
-    two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1)
+    two_players_hole_cards(accounts, two_players_selected_dealer, deckArgs, room, perm0, perm1)
 
     tableId = two_players_selected_dealer["tableId"]
 
@@ -410,10 +434,10 @@ def test_fold_blind(accounts, two_players_selected_dealer, room, game):
     assert game.games(tableId)["stack"][0] == config["buyIn"] - smallBlind
     assert game.games(tableId)["stack"][1] == config["buyIn"] + smallBlind
 
-def test_dealer_fold_blind(accounts, two_players_selected_dealer, room, game):
+def test_dealer_fold_blind(accounts, two_players_selected_dealer, deckArgs, room, game):
     perm0, perm1 = two_players_empty_shuffle
 
-    two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1)
+    two_players_hole_cards(accounts, two_players_selected_dealer, deckArgs, room, perm0, perm1)
 
     tableId = two_players_selected_dealer["tableId"]
 
@@ -438,7 +462,7 @@ def test_dealer_fold_blind(accounts, two_players_selected_dealer, room, game):
     assert game.games(tableId)["stack"][0] == config["buyIn"] + bigBlind
     assert game.games(tableId)["stack"][1] == config["buyIn"] - bigBlind
 
-def test_split_pot(accounts, two_players_selected_dealer, room, game):
+def test_split_pot(accounts, two_players_selected_dealer, deckArgs, room, game):
     # card indices of the deal:
     # 0 1 2 3 4 5 6 7 8 9 a b
     # 0 1 0 1 b f f f b t b r
@@ -460,11 +484,10 @@ def test_split_pot(accounts, two_players_selected_dealer, room, game):
     assert is_permutation(perm0)
     assert is_permutation(perm1)
 
-    two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1)
+    two_players_hole_cards(accounts, two_players_selected_dealer, deckArgs, room, perm0, perm1)
 
     tableId = two_players_selected_dealer["tableId"]
     deckId = room.configParams(tableId)[-1]
-    deckArgs = two_players_selected_dealer["deckArgs"]
 
     game.callBet(tableId, 0, sender=accounts[0])
     game.callBet(tableId, 1, sender=accounts[1])
@@ -576,10 +599,10 @@ def test_split_pot(accounts, two_players_selected_dealer, room, game):
 
     assert room.phaseCommit(tableId)[0] == Phase_SHUF, "onto shuffle for next hand"
 
-def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, room, game):
+def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, deckArgs, room, game):
     perm0, perm1 = two_players_empty_shuffle
 
-    two_players_hole_cards(accounts, two_players_selected_dealer, room, perm0, perm1)
+    two_players_hole_cards(accounts, two_players_selected_dealer, deckArgs, room, perm0, perm1)
 
     tableId = two_players_selected_dealer["tableId"]
     config = two_players_selected_dealer["config"]
@@ -631,7 +654,6 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, room, ga
     with reverts("unauthorised"):
         game.showCards(tableId, 0, sender=accounts[0])
 
-    deckArgs = two_players_selected_dealer["deckArgs"]
     deckId = room.configParams(tableId)[-1]
 
     decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, [5,6,7,9,11], [1,1,1,1,1])
