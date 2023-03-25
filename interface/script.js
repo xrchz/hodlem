@@ -134,7 +134,7 @@ const emptyAddress = '0x0000000000000000000000000000000000000000'
 function cardSpan(card) {
   const span = document.createElement('span')
   span.classList.add('card')
-  if (card === 53) span.innerText = '🂠'
+  if (card >= 52) span.innerText = '🂠'
   else {
     let codepoint = 0x1F000
     const suit = Math.floor(card / 13)

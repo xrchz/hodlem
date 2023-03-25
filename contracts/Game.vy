@@ -82,7 +82,7 @@ struct Game:
 
 games: public(HashMap[uint256, Game])
 
-PENDING_REVEAL: constant(uint256) = 54
+PENDING_REVEAL: constant(uint256) = 53
 
 @external
 def afterShuffle(_tableId: uint256):
@@ -250,18 +250,13 @@ def afterDeal(_tableId: uint256, _phase: uint256):
       else:
         raise "internal consistency failure afterDeal play"
     else:
-      # fill the board with the revealedCards
-      boardIndex: uint256 = 5
-      cardIndex: uint256 = T.deckIndex(_tableId)
-      for _ in range(5):
-        boardIndex = unsafe_sub(boardIndex, 1)
-        if self.games[_tableId].board[boardIndex] == empty(uint256):
-          continue
-        elif self.games[_tableId].board[boardIndex] == PENDING_REVEAL:
-          cardIndex = unsafe_sub(cardIndex, 1)
+      # fill board with revealed cards
+      for boardIndex in range(5):
+        b: uint256 = self.games[_tableId].board[boardIndex]
+        if PENDING_REVEAL <= b:
+          cardIndex: uint256 = unsafe_sub(b, PENDING_REVEAL)
           self.games[_tableId].board[boardIndex] = T.cardAt(_tableId, cardIndex)
-        else:
-          break
+        elif b == 0: break
       if self.games[_tableId].actionBlock == empty(uint256):
           # skip to showdown when all players are all-in
           self.afterAct(_tableId, self.games[_tableId].dealer)
@@ -554,7 +549,7 @@ def rightmostPot(gameId: uint256) -> uint256:
 def drawToBoard(_tableId: uint256, _boardIndex: uint256):
   cardIndex: uint256 = T.dealTo(_tableId, self.games[_tableId].dealer)
   T.showCard(_tableId, cardIndex)
-  self.games[_tableId].board[_boardIndex] = PENDING_REVEAL
+  self.games[_tableId].board[_boardIndex] = unsafe_add(PENDING_REVEAL, cardIndex)
 
 @internal
 @view
@@ -720,17 +715,20 @@ def suitCount(suits: uint256) -> uint256:
 @pure
 def bestHandRank(cards: uint256[7]) -> uint256:
   hand: uint256[13] = empty(uint256[13])
+  suits: int128[7] = empty(int128[7])
+  ranks: uint256[7] = empty(uint256[7])
   for i in range(7):
-    hand[self.rank(cards[i])] |= shift(1, self.suit(cards[i]))
+    suits[i] = self.suit(cards[i])
+    ranks[i] = self.rank(cards[i])
+    hand[ranks[i]] |= shift(1, suits[i])
   bestRank: uint256 = 0
   for i in range(7):
-    hand[self.rank(cards[i])] ^= shift(1, self.suit(cards[i]))
+    hand[ranks[i]] ^= shift(1, suits[i])
     for delta in range(7):
       j: uint256 = unsafe_add(unsafe_add(i, delta), 1)
-      if j == 7:
-        break
-      hand[self.rank(cards[j])] ^= shift(1, self.suit(cards[j]))
+      if j == 7: break
+      hand[ranks[j]] ^= shift(1, suits[j])
       bestRank = max(bestRank, self.handRank(hand))
-      hand[self.rank(cards[j])] ^= shift(1, self.suit(cards[j]))
-    hand[self.rank(cards[i])] ^= shift(1, self.suit(cards[i]))
+      hand[ranks[j]] ^= shift(1, suits[j])
+    hand[ranks[i]] ^= shift(1, suits[i])
   return bestRank

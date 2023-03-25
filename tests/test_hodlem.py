@@ -586,10 +586,12 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, room, ga
 
     game.callBet(tableId, 0, sender=accounts[0])
 
-    with reverts("size exceeds stack"):
-        game.raiseBet(tableId, 1, config["buyIn"] + 1, sender=accounts[1])
+    buyIn = config["buyIn"]
 
-    tx = game.raiseBet(tableId, 1, config["buyIn"], sender=accounts[1])
+    with reverts("size exceeds stack"):
+        game.raiseBet(tableId, 1, buyIn + 1, sender=accounts[1])
+
+    tx = game.raiseBet(tableId, 1, buyIn, sender=accounts[1])
 
     smallBlind = config["structure"][0]
     bigBlind = smallBlind * 2
@@ -600,8 +602,8 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, room, ga
     assert raise_event.event_arguments == {
             "table": tableId,
             "seat": 1,
-            "bet": config["buyIn"],
-            "placed": config["buyIn"] - bigBlind}
+            "bet": buyIn,
+            "placed": buyIn - bigBlind}
 
     tx = game.callBet(tableId, 0, sender=accounts[0])
 
@@ -611,9 +613,82 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, room, ga
     assert call_event.event_arguments == {
             "table": tableId,
             "seat": 0,
-            "bet": config["buyIn"],
-            "placed": config["buyIn"] - bigBlind}
+            "bet": buyIn,
+            "placed": buyIn - bigBlind}
 
     round_event = tx.events[1]
     assert round_event.event_name == "DealRound"
     assert round_event.event_arguments == {"table": tableId, "street": 2}
+
+    round_event = tx.events[2]
+    assert round_event.event_name == "DealRound"
+    assert round_event.event_arguments == {"table": tableId, "street": 3}
+
+    round_event = tx.events[3]
+    assert round_event.event_name == "DealRound"
+    assert round_event.event_arguments == {"table": tableId, "street": 4}
+
+    with reverts("unauthorised"):
+        game.showCards(tableId, 0, sender=accounts[0])
+
+    deckArgs = two_players_selected_dealer["deckArgs"]
+    deckId = room.configParams(tableId)[-1]
+
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, [5,6,7,9,11], [1,1,1,1,1])
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, [5,6,7,9,11], [1,1,1,1,1])
+    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [5,6,7,9,11], True)
+    assert len(tx.events) == 5
+    for event, i in zip(tx.events, [5,6,7,9,11]):
+        assert event.event_name == "Show"
+        assert event.event_arguments == {
+                "table": tableId,
+                "player": accounts[1].address,
+                "card": i,
+                "show": i+1}
+
+    game.showCards(tableId, 1, sender=accounts[1])
+    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1,3], True)
+    assert len(tx.events) == 2
+    event = tx.events[0]
+    assert event.event_name == "Show"
+    assert event.event_arguments == {
+            "table": tableId, "player": accounts[1].address,
+            "card": 1, "show": 2}
+    event = tx.events[1]
+    assert event.event_name == "Show"
+    assert event.event_arguments == {
+            "table": tableId, "player": accounts[1].address,
+            "card": 3, "show": 4}
+
+    game.showCards(tableId, 0, sender=accounts[0])
+    tx = revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0,2], True)
+    assert len(tx.events) == 6
+    event = tx.events[0]
+    assert event.event_name == "Show"
+    assert event.event_arguments == {
+            "table": tableId, "player": accounts[0].address,
+            "card": 0, "show": 1}
+    event = tx.events[1]
+    assert event.event_name == "Show"
+    assert event.event_arguments == {
+            "table": tableId, "player": accounts[0].address,
+            "card": 2, "show": 3}
+
+    # shown 2 4 6 7 8 10 12 = flush with ranks 3 5 7 8 9 J K
+    rank = (6 << (5 * 8)) + (11 << (4 * 8)) + (9 << (3 * 8)) + (7 << (2 * 8)) + (6 << (1 * 8)) + 5
+    event = tx.events[2]
+    assert event.event_name == "ShowHand"
+    assert event.event_arguments == { "table": tableId, "seat": 0, "rank": rank}
+
+    # shown 1 3 6 7 8 10 12, so same best hand
+    event = tx.events[3]
+    assert event.event_name == "ShowHand"
+    assert event.event_arguments == { "table": tableId, "seat": 1, "rank": rank}
+
+    event = tx.events[4]
+    assert event.event_name == "CollectPot"
+    assert event.event_arguments == {"table": tableId, "seat": 0, "pot": buyIn}
+
+    event = tx.events[5]
+    assert event.event_name == "CollectPot"
+    assert event.event_arguments == {"table": tableId, "seat": 1, "pot": buyIn}
