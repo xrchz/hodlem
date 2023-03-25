@@ -58,6 +58,11 @@ T: immutable(RoomManager)
 def __init__(roomAddress: address):
   T = RoomManager(roomAddress)
 
+@external
+@view
+def roomAddress() -> address:
+  return T.address
+
 struct Game:
   startBlock:  uint256            # block number when game started
   stack:       uint256[MAX_SEATS] # stack at each seat (zero for eliminated or all-in players)

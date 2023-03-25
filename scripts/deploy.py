@@ -9,11 +9,9 @@ def deploy():
     return deck, room, game
 
 def main():
-    deck, room, game = deploy()
+    _, _, game = deploy()
     with open("interface/.env", "w") as f:
         f.write(f'RPC={networks.active_provider.web3.provider.endpoint_uri}\n')
-        f.write(f'DECK={deck.address}\n')
-        f.write(f'ROOM={room.address}\n')
         f.write(f'GAME={game.address}\n')
     acc[0].transfer('0xCcbd1e8d367F6AC608b97260D8De9bad27C11ADc', '6.9 ether')
     assert False, "avoid exiting: drop into interactive console"

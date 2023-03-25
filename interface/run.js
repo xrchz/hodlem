@@ -33,11 +33,11 @@ const game = new ethers.Contract(process.env.GAME,
   JSON.parse(fs.readFileSync(process.env.GAME_ABI || '../.build/Game.json', 'utf8')).abi,
   provider)
 console.log(`Game is ${game.address}`)
-const room = new ethers.Contract(process.env.ROOM,
+const room = new ethers.Contract(await game.roomAddress(),
   JSON.parse(fs.readFileSync(process.env.ROOM_ABI || '../.build/Room.json', 'utf8')).abi,
   provider)
 console.log(`Room is ${room.address}`)
-const deck = new ethers.Contract(process.env.DECK,
+const deck = new ethers.Contract(await room.deckAddress(),
   JSON.parse(fs.readFileSync(process.env.DECK_ABI || '../.build/Deck.json', 'utf8')).abi,
   provider)
 console.log(`Deck is ${deck.address}`)

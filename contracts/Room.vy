@@ -86,6 +86,11 @@ def __init__(_deckAddr: address):
   D = DeckManager(_deckAddr)
   self.nextTableId = 1
 
+@external
+@view
+def deckAddress() -> address:
+  return D.address
+
 @internal
 def forceSend(_to: address, _amount: uint256) -> bool:
   return raw_call(_to, b"", value=_amount, gas=0, revert_on_failure=False)
