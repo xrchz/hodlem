@@ -189,7 +189,7 @@ def three_players_prepped(networks, accounts, deck, room, game, deckArgs):
     config = dict(
             buyIn=1000,
             bond=5000000,
-            startsWith=2,
+            startsWith=3,
             untilLeft=1,
             structure=[50, 100, 200, 400, 800],
             levelBlocks=50,
@@ -248,12 +248,7 @@ def test_submit_shuffle_timeout(accounts, chain, two_players_prepped, room):
     assert accounts[1].balance == acc1_prev_balance + value
     assert room.balance == room_prev_balance - value - value
 
-def two_players_shuffle(accounts, two_players_prepped, deckArgs, room, perm0, perm1):
-    tableId = two_players_prepped["tableId"]
-    deckId = room.configParams(tableId)[-1]
-    config = two_players_prepped["config"]
-    verifRounds = config["verifRounds"]
-
+def shuffle(deckArgs, account, verifRounds, deckId, perm, tableId, seatIndex, room):
     def readShuffle(f):
         a = []
         def n():
@@ -263,21 +258,14 @@ def two_players_shuffle(accounts, two_players_prepped, deckArgs, room, perm0, pe
         return a
 
     lines = iter(subprocess.run(
-             deckArgs + ["--from", accounts[0].address, "shuffle",
+             deckArgs + ["--from", account.address, "shuffle",
                          "-v", str(verifRounds), "-j", str(deckId),
-                         "--order", ','.join([str(n) for n in perm0])],
+                         "--order", ','.join([str(n) for n in perm])],
             stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
 
-    tx = room.submitShuffle(tableId, 0, readShuffle(lines), next(lines), sender=accounts[0])
+    return room.submitShuffle(tableId, seatIndex, readShuffle(lines), next(lines), sender=account)
 
-    lines = iter(subprocess.run(
-             deckArgs + ["--from", accounts[1].address, "shuffle",
-                         "-v", str(verifRounds), "-j", str(deckId),
-                         "--order", ','.join([str(n) for n in perm1])],
-            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
-
-    tx = room.submitShuffle(tableId, 1, readShuffle(lines), next(lines), sender=accounts[1])
-
+def verifyShuffle(deckArgs, account, deckId, seatIndex, tableId, room):
     def readVerification(f):
         c = []
         s = []
@@ -299,18 +287,33 @@ def two_players_shuffle(accounts, two_players_prepped, deckArgs, room, perm0, pe
         return c, s, p
 
     lines = iter(subprocess.run(
-             deckArgs + ["--from", accounts[0].address, "verifyShuffle",
-                         "-j", str(deckId), "-s", '0'],
+             deckArgs + ["--from", account.address, "verifyShuffle",
+                         "-j", str(deckId), "-s", str(seatIndex)],
             stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
     c, s, p = readVerification(lines)
-    tx = room.verifyShuffle(tableId, 0, c, s, p, sender=accounts[0])
+    return room.verifyShuffle(tableId, seatIndex, c, s, p, sender=account)
 
-    lines = iter(subprocess.run(
-             deckArgs + ["--from", accounts[1].address, "verifyShuffle",
-                         "-j", str(deckId), "-s", '1'],
-            stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
-    c, s, p = readVerification(lines)
-    tx = room.verifyShuffle(tableId, 1, c, s, p, sender=accounts[1])
+def two_players_shuffle(accounts, two_players_prepped, deckArgs, room, perm0, perm1):
+    tableId = two_players_prepped["tableId"]
+    deckId = room.configParams(tableId)[-1]
+    config = two_players_prepped["config"]
+    verifRounds = config["verifRounds"]
+    shuffle(deckArgs, accounts[0], verifRounds, deckId, perm0, tableId, 0, room)
+    shuffle(deckArgs, accounts[1], verifRounds, deckId, perm1, tableId, 1, room)
+    verifyShuffle(deckArgs, accounts[0], deckId, 0, tableId, room)
+    verifyShuffle(deckArgs, accounts[1], deckId, 1, tableId, room)
+
+def three_players_shuffle(accounts, three_players_prepped, deckArgs, room, perms):
+    tableId = three_players_prepped["tableId"]
+    deckId = room.configParams(tableId)[-1]
+    config = three_players_prepped["config"]
+    verifRounds = config["verifRounds"]
+    shuffle(deckArgs, accounts[0], verifRounds, deckId, perms[0], tableId, 0, room)
+    shuffle(deckArgs, accounts[1], verifRounds, deckId, perms[1], tableId, 1, room)
+    shuffle(deckArgs, accounts[2], verifRounds, deckId, perms[2], tableId, 2, room)
+    verifyShuffle(deckArgs, accounts[0], deckId, 0, tableId, room)
+    verifyShuffle(deckArgs, accounts[1], deckId, 1, tableId, room)
+    verifyShuffle(deckArgs, accounts[2], deckId, 2, tableId, room)
 
 def readIntLists(f, z):
     a = []
@@ -714,3 +717,26 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, deckArgs
     event = tx.events[5]
     assert event.event_name == "CollectPot"
     assert event.event_arguments == {"table": tableId, "seat": 1, "pot": buyIn}
+
+def test_three_players_deal_timeout(accounts, chain, three_players_prepped, deckArgs, room):
+    perm0, perm1 = two_players_empty_shuffle
+    three_players_shuffle(accounts, three_players_prepped, deckArgs, room, [perm0, perm1, perm0])
+    tableId = three_players_prepped["tableId"]
+    with reverts("deadline not passed"):
+        room.decryptTimeout(tableId, 0, 0, sender=accounts[1])
+    dealBlocks = three_players_prepped["config"]["dealBlocks"]
+    chain.mine(dealBlocks)
+    tx = room.decryptTimeout(tableId, 0, 0, sender=accounts[1])
+    assert len(tx.events) == 5
+    assert tx.events[0].event_name == "Challenge"
+    assert tx.events[0].event_arguments == {
+            "table": tableId,
+            "player": accounts[0].address,
+            "sender": accounts[1].address,
+            "type": 4
+        }
+    assert tx.events[1].event_name == "LeaveTable"
+    assert tx.events[2].event_name == "LeaveTable"
+    assert tx.events[3].event_name == "LeaveTable"
+    assert tx.events[4].event_name == "EndGame"
+    assert tx.events[4].event_arguments == {"table": tableId}
