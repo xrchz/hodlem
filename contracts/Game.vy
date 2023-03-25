@@ -569,7 +569,8 @@ def roundNextActor(_numPlayers: uint256, _gameId: uint256, _seatIndex: uint256, 
   for _ in range(MAX_SEATS):
     nextIndex = uint256_addmod(nextIndex, 1, _numPlayers)
     if (nextIndex == _stopAt or
-        self.games[_gameId].stack[nextIndex] != empty(uint256)):
+        (self.games[_gameId].liveUntil[nextIndex] != 0 and
+         self.games[_gameId].stack[nextIndex] != empty(uint256))):
       return nextIndex
   raise "_stopAt not found"
 
