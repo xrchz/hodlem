@@ -662,7 +662,7 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, deckArgs
     decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, [5,6,7,9,11], [1,1,1,1,1])
     decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, [5,6,7,9,11], [1,1,1,1,1])
     tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [5,6,7,9,11], True)
-    assert len(tx.events) == 5
+    assert len(tx.events) == 6
     for event, i in zip(tx.events, [5,6,7,9,11]):
         assert event.event_name == "Show"
         assert event.event_arguments == {
@@ -670,6 +670,9 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, deckArgs
                 "player": accounts[1].address,
                 "card": i,
                 "show": i+1}
+    round_event = tx.events[5]
+    assert round_event.event_name == "DealRound"
+    assert round_event.event_arguments == {"table": tableId, "street": 5}
 
     game.showCards(tableId, 1, sender=accounts[1])
     tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1,3], True)
@@ -768,10 +771,15 @@ def test_uneven_split(accounts, room, game, deckArgs, three_players_selected_dea
     smallBlind = config["structure"][0]
     bigBlind = smallBlind * 2
 
+    perm = list(range(1, 53))
+    # ensure we get a flush by swapping the burned A with the 2 of the next suit
+    perm[13] = 13
+    perm[12] = 14
+
     three_players_shuffle(accounts, three_players_selected_dealer, deckArgs, room,
-                          two_players_empty_shuffle + (list(range(1, 53)),))
+                          two_players_empty_shuffle + (perm,))
     holeCards = [0,1,2,3,4,5]
-    drawnTo = [2,0,1,2,0,1]
+    drawnTo   = [2,0,1,2,0,1]
     decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, holeCards, drawnTo)
     decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, holeCards, drawnTo)
     decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, holeCards, drawnTo, True)
@@ -843,6 +851,59 @@ def test_uneven_split(accounts, room, game, deckArgs, three_players_selected_dea
     decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, river, drawnTo)
     decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, river, drawnTo)
     decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, river, drawnTo)
-    revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, river, True)
+    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, river, True)
+    assert len(tx.events) == 1
+    show_event = tx.events[0]
+    assert show_event.event_name == "Show"
+    assert show_event.event_arguments == {
+            "table": tableId, "player": accounts[1].address,
+            "card": 13, "show": 13}
 
-    assert False, "wip"
+    game.callBet(tableId, 2, sender=accounts[2])
+    tx = game.callBet(tableId, 0, sender=accounts[0])
+    assert len(tx.events) == 2
+    assert tx.events[1].event_name == "DealRound"
+    assert tx.events[1].event_arguments == {"table": tableId, "street": 5}
+
+    game.showCards(tableId, 2, sender=accounts[2])
+    tx = revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [0,3], True)
+    assert len(tx.events) == 2
+    show_event = tx.events[0]
+    assert show_event.event_name == "Show"
+    assert show_event.event_arguments == {
+            "table": tableId, "player": accounts[2].address,
+            "card": 0, "show": 1}
+    show_event = tx.events[1]
+    assert show_event.event_name == "Show"
+    assert show_event.event_arguments == {
+            "table": tableId, "player": accounts[2].address,
+            "card": 3, "show": 4}
+
+    game.showCards(tableId, 0, sender=accounts[0])
+    tx = revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [1,4], True)
+    assert len(tx.events) == 6
+
+    # shown indices: 1/2 4/5 8 9 10 12 13
+    # flush ranks: 2/3 5/6 9 10 J K A
+    rank = (6 << (5 * 8)) + (12 << (4 * 8)) + (11 << (3 * 8)) + (9 << (2 * 8)) + (8 << (1 * 8)) + 7
+    show_event = tx.events[2]
+    assert show_event.event_name == "ShowHand"
+    assert show_event.event_arguments == {
+            "table": tableId, "seat": 0, "rank": rank}
+
+    show_event = tx.events[3]
+    assert show_event.event_name == "ShowHand"
+    assert show_event.event_arguments == {
+            "table": tableId, "seat": 2, "rank": rank}
+
+    # pot was 3 * (bigBlind * 2 + 1) == 6 * bigBlind + 3
+    # split is 3 * bigBlind + 1.5
+    # 0 gets the extra chip because they have the higher card in hand
+    collect_event = tx.events[4]
+    assert collect_event.event_name == "CollectPot"
+    assert collect_event.event_arguments == {
+            "table": tableId, "seat": 0, "pot": bigBlind * 3 + 2}
+    collect_event = tx.events[5]
+    assert collect_event.event_name == "CollectPot"
+    assert collect_event.event_arguments == {
+            "table": tableId, "seat": 2, "pot": bigBlind * 3 + 1}

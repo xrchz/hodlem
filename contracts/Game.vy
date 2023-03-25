@@ -302,6 +302,15 @@ event ShowHand:
   rank: uint256
 
 @internal
+@view
+def hasCard(_tableId: uint256, _seatIndex: uint256, _suit: int128, _rank: uint256) -> bool:
+  for i in range(2):
+    card: uint256 = T.cardAt(_tableId, self.games[_tableId].hands[_seatIndex][i])
+    if self.rank(card) == _rank and self.suit(card) == _suit:
+      return True
+  return False
+
+@internal
 def afterShow(_tableId: uint256):
   seatIndex: uint256 = self.games[_tableId].actionIndex
   numPlayers: uint256 = T.numPlayers(_tableId)
@@ -334,24 +343,29 @@ def afterShow(_tableId: uint256):
       elif bestHandRank == handRank:
         winners.append(contestantIndex)
     share: uint256 = unsafe_div(self.games[_tableId].pot[potIndex], len(winners))
+    collections: uint256[MAX_SEATS] = empty(uint256[MAX_SEATS])
     for winnerIndex in winners:
       self.games[_tableId].pot[potIndex] = unsafe_sub(self.games[_tableId].pot[potIndex], share)
       self.games[_tableId].stack[winnerIndex] = unsafe_add(self.games[_tableId].stack[winnerIndex], share)
-      log CollectPot(_tableId, winnerIndex, share)
+      collections[winnerIndex] = share
     # odd chip(s) distributed according to overall card rank
     if self.games[_tableId].pot[potIndex] != 0:
-      for negCard in range(52):
-        card: uint256 = unsafe_sub(52, negCard)
-        for winnerIndex in winners:
-          if (T.cardAt(_tableId, self.games[_tableId].hands[winnerIndex][0]) == card or
-              T.cardAt(_tableId, self.games[_tableId].hands[winnerIndex][1]) == card):
-            self.games[_tableId].pot[potIndex] = unsafe_sub(self.games[_tableId].pot[potIndex], 1)
-            self.games[_tableId].stack[winnerIndex] = unsafe_add(self.games[_tableId].stack[winnerIndex], 1)
-            log CollectPot(_tableId, winnerIndex, 1)
-            if self.games[_tableId].pot[potIndex] == 0:
-              break
-        if self.games[_tableId].pot[potIndex] == 0:
-          break
+      done: bool = False
+      for negRank in range(13):
+        rank: uint256 = unsafe_sub(12, negRank)
+        for negSuit in range(4):
+          suit: int128 = unsafe_sub(3, negSuit)
+          for winnerIndex in winners:
+            if self.hasCard(_tableId, winnerIndex, suit, rank):
+              self.games[_tableId].pot[potIndex] = unsafe_sub(self.games[_tableId].pot[potIndex], 1)
+              self.games[_tableId].stack[winnerIndex] = unsafe_add(self.games[_tableId].stack[winnerIndex], 1)
+              collections[winnerIndex] = unsafe_add(collections[winnerIndex], 1)
+              done = self.games[_tableId].pot[potIndex] == 0
+              if done: break
+          if done: break
+        if done: break
+    for winnerIndex in winners:
+      log CollectPot(_tableId, winnerIndex, collections[winnerIndex])
     if potIndex != 0:
       self.games[_tableId].potIndex = unsafe_sub(potIndex, 1)
       if self.games[_tableId].liveUntil[self.games[_tableId].actionIndex] <= self.games[_tableId].potIndex:
@@ -521,6 +535,7 @@ def afterAct(_tableId: uint256, _seatIndex: uint256):
       self.drawNextCard(_tableId)
     else:
       # showdown to settle remaining pots
+      log DealRound(_tableId, 5)
       T.startShow(_tableId)
       # advance actionIndex till the first player in the rightmost pot
       self.games[_tableId].potIndex = self.rightmostPot(_tableId)
