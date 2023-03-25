@@ -198,19 +198,6 @@ def fold(_tableId: uint256, _seatIndex: uint256):
   log Fold(_tableId, _seatIndex)
   self.afterAct(_tableId, _seatIndex)
 
-@internal
-def addSidePot(_numPlayers: uint256, _gameId: uint256, _seatIndex: uint256):
-  potIndex: uint256 = self.games[_gameId].liveUntil[_seatIndex]
-  nextPot: uint256 = unsafe_add(potIndex, 1)
-  self.games[_gameId].liveUntil[_seatIndex] = nextPot
-  for seatIndex in range(MAX_SEATS):
-    if seatIndex == _numPlayers:
-      break
-    elif self.games[_gameId].stack[seatIndex] == 0:
-      continue
-    elif self.games[_gameId].liveUntil[seatIndex] == potIndex:
-      self.games[_gameId].liveUntil[seatIndex] = nextPot
-
 event CallBet:
   table: indexed(uint256)
   seat: indexed(uint256)
@@ -225,8 +212,6 @@ def callBet(_tableId: uint256, _seatIndex: uint256):
   placed: uint256 = 0
   if 0 < raiseBy:
     placed = self.placeBet(_tableId, _seatIndex, raiseBy)
-    if self.games[_tableId].stack[_seatIndex] == 0: # calling all-in with side-pot
-      self.addSidePot(T.numPlayers(_tableId), _tableId, _seatIndex)
   log CallBet(_tableId, _seatIndex, bet, placed)
   self.afterAct(_tableId, _seatIndex)
 
@@ -250,7 +235,6 @@ def raiseBet(_tableId: uint256, _seatIndex: uint256, _raiseTo: uint256):
     self.games[_tableId].minRaise = raiseBy
   else: # raising all-in
     assert self.games[_tableId].stack[_seatIndex] == 0, "below minimum"
-    self.addSidePot(T.numPlayers(_tableId), _tableId, _seatIndex)
   log RaiseBet(_tableId, _seatIndex, _raiseTo, size)
   self.afterAct(_tableId, _seatIndex)
 
@@ -410,37 +394,32 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
   self.games[_tableId].actionBlock = empty(uint256)
 
 @internal
-@view
-def potSize(_numPlayers: uint256, _tableId: uint256, _potIndex: uint256) -> uint256:
-  minBet: uint256 = max_value(uint256)
-  liveUntil: uint256 = unsafe_add(_potIndex, 1)
-  for seatIndex in range(MAX_SEATS):
-    if seatIndex == _numPlayers:
-      break
-    if self.games[_tableId].liveUntil[seatIndex] == liveUntil:
-      minBet = min(minBet, self.games[_tableId].bet[seatIndex])
-  assert minBet < max_value(uint256), "TODO: internal consistency check potSize"
-  return minBet
-
-@internal
 def collectPots(_numPlayers: uint256, _gameId: uint256):
-  maxLiveUntil: uint256 = 0
+  minBet: uint256 = max_value(uint256)
   for seatIndex in range(MAX_SEATS):
-    if seatIndex == _numPlayers:
-      break
-    maxLiveUntil = max(maxLiveUntil, self.games[_gameId].liveUntil[seatIndex])
+    if seatIndex == _numPlayers: break
+    if 0 < self.games[_gameId].liveUntil[seatIndex]:
+      minBet = min(minBet, self.games[_gameId].bet[seatIndex])
+
+  potLiveUntil: uint256 = 0
+  nextLiveUntil: uint256 = 1
   for potIndex in range(MAX_SEATS):
-    if potIndex == maxLiveUntil:
-      break
-    potAmount: uint256 = self.potSize(_numPlayers, _gameId, potIndex)
+    potLiveUntil = nextLiveUntil
+    nextLiveUntil = unsafe_add(nextLiveUntil, 1)
+    nextMinBet: uint256 = max_value(uint256)
     for seatIndex in range(MAX_SEATS):
-      if seatIndex == _numPlayers:
-        break
-      betAmount: uint256 = self.games[_gameId].bet[seatIndex]
-      if 0 < betAmount:
-        amount: uint256 = min(potAmount, betAmount)
-        self.games[_gameId].bet[seatIndex] = unsafe_sub(betAmount, amount)
+      if seatIndex == _numPlayers: break
+      bet: uint256 = self.games[_gameId].bet[seatIndex]
+      if 0 < bet:
+        amount: uint256 = min(bet, minBet)
+        nextBet: uint256 = unsafe_sub(bet, amount)
+        self.games[_gameId].bet[seatIndex] = nextBet
         self.games[_gameId].pot[potIndex] = unsafe_add(self.games[_gameId].pot[potIndex], amount)
+        if self.games[_gameId].liveUntil[seatIndex] == potLiveUntil and 0 < nextBet:
+          self.games[_gameId].liveUntil[seatIndex] = nextLiveUntil
+          nextMinBet = min(nextMinBet, nextBet)
+    if nextMinBet == max_value(uint256): break
+    minBet = nextMinBet
 
 event CollectPot:
   table: indexed(uint256)
@@ -534,7 +513,7 @@ def afterAct(_tableId: uint256, _seatIndex: uint256):
   self.games[_tableId].actionIndex = self.roundNextActor(numPlayers, _tableId, _seatIndex, stopIndex)
   if self.games[_tableId].actionIndex == stopIndex or self.games[_tableId].numInHand == 1:
     # nobody is left to act in this round
-    # move bets to pots
+    # move bets to pots and create side pots if necessary
     self.collectPots(numPlayers, _tableId)
     # settle uncontested pots
     numContested: uint256 = self.settleUncontested(numPlayers, _tableId)

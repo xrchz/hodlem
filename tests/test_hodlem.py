@@ -594,6 +594,7 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, room, ga
     smallBlind = config["structure"][0]
     bigBlind = smallBlind * 2
 
+    assert len(tx.events) == 1
     raise_event = tx.events[0]
     assert raise_event.event_name == "RaiseBet"
     assert raise_event.event_arguments == {
@@ -603,6 +604,15 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, room, ga
             "placed": config["buyIn"] - bigBlind}
 
     tx = game.callBet(tableId, 0, sender=accounts[0])
+
+    assert len(tx.events) == 4
+    call_event = tx.events[0]
+    assert call_event.event_name == "CallBet"
+    assert call_event.event_arguments == {
+            "table": tableId,
+            "seat": 0,
+            "bet": config["buyIn"],
+            "placed": config["buyIn"] - bigBlind}
 
     round_event = tx.events[1]
     assert round_event.event_name == "DealRound"
