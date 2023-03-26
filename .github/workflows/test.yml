@@ -10,6 +10,7 @@ on:
       - 'tests/*.py'
 jobs:
   test:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@latest
       - uses: chill-viking/npm-ci@latest
