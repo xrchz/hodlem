@@ -348,7 +348,8 @@ def decryptCards(deckArgs, deckId, seatIndex, account, tableId, room, indices, d
                          "--draw-indices", ",".join(map(str, drawIndices)),
                          "-j", str(deckId), "-s", str(seatIndex)],
             stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
-    return room.decryptCards(tableId, seatIndex, readIntLists(lines, 8), end, sender=account)
+    lists = readIntLists(lines, 8)
+    return room.decryptCards(tableId, seatIndex, lists, end, sender=account)
 
 def revealCards(deckArgs, deckId, seatIndex, account, tableId, room, indices, end=False):
     lines = iter(subprocess.run(
@@ -356,7 +357,8 @@ def revealCards(deckArgs, deckId, seatIndex, account, tableId, room, indices, en
                          "--indices", ",".join(map(str, indices)),
                          "-j", str(deckId), "-s", str(seatIndex)],
             stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
-    return room.revealCards(tableId, seatIndex, readIntLists(lines, 7), end, sender=account)
+    lists = readIntLists(lines, 7)
+    return room.revealCards(tableId, seatIndex, lists, end, sender=account)
 
 @pytest.fixture(scope="session")
 def two_players_selected_dealer(accounts, room, two_players_prepped, deckArgs):
@@ -659,65 +661,39 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, deckArgs
 
     deckId = room.configParams(tableId)[-1]
 
-    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, [5,6,7,9,11], [1,1,1,1,1])
-    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, [5,6,7,9,11], [1,1,1,1,1])
-    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [5,6,7,9,11], True)
-    assert len(tx.events) == 6
-    for event, i in zip(tx.events, [5,6,7,9,11]):
+    cards = [5,6,7,9,11]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, [1,1,1,1,1])
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, [1,1,1,1,1])
+    revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0,2])
+    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards + [1,3], True)
+    assert len(tx.events) == 12
+    for event, i in zip(tx.events, cards + [1,3]):
         assert event.event_name == "Show"
         assert event.event_arguments == {
                 "table": tableId,
                 "player": accounts[1].address,
                 "card": i,
                 "show": i+1}
-    round_event = tx.events[5]
+    round_event = tx.events[7]
     assert round_event.event_name == "DealRound"
     assert round_event.event_arguments == {"table": tableId, "street": 5}
 
-    game.showCards(tableId, 1, sender=accounts[1])
-    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1,3], True)
-    assert len(tx.events) == 2
-    event = tx.events[0]
-    assert event.event_name == "Show"
-    assert event.event_arguments == {
-            "table": tableId, "player": accounts[1].address,
-            "card": 1, "show": 2}
-    event = tx.events[1]
-    assert event.event_name == "Show"
-    assert event.event_arguments == {
-            "table": tableId, "player": accounts[1].address,
-            "card": 3, "show": 4}
-
-    game.showCards(tableId, 0, sender=accounts[0])
-    tx = revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0,2], True)
-    assert len(tx.events) == 6
-    event = tx.events[0]
-    assert event.event_name == "Show"
-    assert event.event_arguments == {
-            "table": tableId, "player": accounts[0].address,
-            "card": 0, "show": 1}
-    event = tx.events[1]
-    assert event.event_name == "Show"
-    assert event.event_arguments == {
-            "table": tableId, "player": accounts[0].address,
-            "card": 2, "show": 3}
-
     # shown 2 4 6 7 8 10 12 = flush with ranks 3 5 7 8 9 J K
     rank = (6 << (5 * 8)) + (11 << (4 * 8)) + (9 << (3 * 8)) + (7 << (2 * 8)) + (6 << (1 * 8)) + 5
-    event = tx.events[2]
+    event = tx.events[8]
     assert event.event_name == "ShowHand"
     assert event.event_arguments == { "table": tableId, "seat": 0, "rank": rank}
 
     # shown 1 3 6 7 8 10 12, so same best hand
-    event = tx.events[3]
+    event = tx.events[9]
     assert event.event_name == "ShowHand"
     assert event.event_arguments == { "table": tableId, "seat": 1, "rank": rank}
 
-    event = tx.events[4]
+    event = tx.events[10]
     assert event.event_name == "CollectPot"
     assert event.event_arguments == {"table": tableId, "seat": 0, "pot": buyIn}
 
-    event = tx.events[5]
+    event = tx.events[11]
     assert event.event_name == "CollectPot"
     assert event.event_arguments == {"table": tableId, "seat": 1, "pot": buyIn}
 
@@ -1020,4 +996,32 @@ def test_side_pot(accounts, three_players_selected_dealer, deckArgs, room, game)
             "table": tableId,
             "street": 4}
 
-    assert False, "wip"
+    cards   = [13]
+    drawnTo = [2]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo)
+    revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards)
+
+    with reverts("unauthorised"):
+        game.raiseBet(tableId, 1, 2 * bigBlind, sender=accounts[1])
+
+    tx = revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2,5], True)
+
+    assert len(tx.events) == 3
+    assert tx.events[0].event_name == "Show"
+    assert tx.events[1].event_name == "Show"
+    assert tx.events[2].event_name == "DealRound"
+
+    with reverts("unauthorised"):
+        game.raiseBet(tableId, 1, 2 * bigBlind, sender=accounts[1])
+
+    game.showCards(tableId, 1, sender=accounts[1])
+    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1,4], True)
+
+    assert len(tx.events) == 5
+    assert tx.events[0].event_name == "Show"
+    assert tx.events[1].event_name == "Show"
+    assert tx.events[2].event_name == "ShowHand"
+    assert tx.events[3].event_name == "ShowHand"
+    assert tx.events[4].event_name == "CollectPot"

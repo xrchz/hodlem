@@ -572,6 +572,11 @@ def startShow(_tableId: uint256):
 
 @external
 @view
+def cardShown(_tableId: uint256, _cardIndex: uint256) -> bool:
+  return self.tables[_tableId].requirement[_cardIndex] == Req_SHOW
+
+@external
+@view
 def authorised(_tableId: uint256, _phase: uint256,
                _seatIndex: uint256 = empty(uint256),
                _address: address = empty(address)) -> bool:
