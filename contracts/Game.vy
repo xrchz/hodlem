@@ -291,10 +291,10 @@ def showHand(_tableId: uint256, _seatIndex: uint256):
   T.showCard(_tableId, self.games[_tableId].hands[_seatIndex][1])
 
 @external
-def showCards(_tableId: uint256, _seatIndex: uint256):
+def showCards(_tableId: uint256, _seatIndex: uint256, _data: uint256[7][2]):
   self.validateTurn(_tableId, _seatIndex, Phase_SHOW)
   self.showHand(_tableId, _seatIndex)
-  T.startDeal(_tableId, Phase_SHOW)
+  T.gameRevealCards(_tableId, _seatIndex, _data)
 
 @external
 def foldCards(_tableId: uint256, _seatIndex: uint256):

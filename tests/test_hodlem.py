@@ -351,13 +351,16 @@ def decryptCards(deckArgs, deckId, seatIndex, account, tableId, room, indices, d
     lists = readIntLists(lines, 8)
     return room.decryptCards(tableId, seatIndex, lists, end, sender=account)
 
-def revealCards(deckArgs, deckId, seatIndex, account, tableId, room, indices, end=False):
+def revealCardsLists(deckArgs, deckId, seatIndex, account, indices):
     lines = iter(subprocess.run(
              deckArgs + ["--from", account.address, "revealCards",
                          "--indices", ",".join(map(str, indices)),
                          "-j", str(deckId), "-s", str(seatIndex)],
             stdout=subprocess.PIPE, check=True, text=True).stdout.splitlines())
-    lists = readIntLists(lines, 7)
+    return readIntLists(lines, 7)
+
+def revealCards(deckArgs, deckId, seatIndex, account, tableId, room, indices, end=False):
+    lists = revealCardsLists(deckArgs, deckId, seatIndex, account, indices)
     return room.revealCards(tableId, seatIndex, lists, end, sender=account)
 
 @pytest.fixture(scope="session")
@@ -543,15 +546,15 @@ def test_split_pot(accounts, two_players_selected_dealer, deckArgs, room, game):
     game.callBet(tableId, 0, sender=accounts[0])
     game.callBet(tableId, 1, sender=accounts[1])
 
+    lists = revealCardsLists(deckArgs, deckId, 0, accounts[0], [0,2])
+
     with reverts("wrong turn"):
-        game.showCards(tableId, 1, sender=accounts[1])
+        game.showCards(tableId, 1, lists, sender=accounts[1])
 
     with reverts("wrong turn"):
         game.foldCards(tableId, 1, sender=accounts[1])
 
-    game.showCards(tableId, 0, sender=accounts[0])
-
-    tx = revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0,2], True)
+    tx = game.showCards(tableId, 0, lists, sender=accounts[0])
     show_event = tx.events[0]
     assert show_event.event_name == "Show"
     assert show_event.event_arguments == {
@@ -565,8 +568,8 @@ def test_split_pot(accounts, two_players_selected_dealer, deckArgs, room, game):
 
     rank = (9 << (5 * 8)) + (12 << (4 * 8))
 
-    game.showCards(tableId, 1, sender=accounts[1])
-    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1,3], True)
+    lists = revealCardsLists(deckArgs, deckId, 1, accounts[1], [1,3])
+    tx = game.showCards(tableId, 1, lists, sender=accounts[1])
     show_event = tx.events[0]
     assert show_event.event_name == "Show"
     assert show_event.event_arguments == {
@@ -657,7 +660,7 @@ def test_raise_all_in_blind_call(accounts, two_players_selected_dealer, deckArgs
     assert round_event.event_arguments == {"table": tableId, "street": 4}
 
     with reverts("unauthorised"):
-        game.showCards(tableId, 0, sender=accounts[0])
+        game.showCards(tableId, 0, [list(range(7)), list(range(7))], sender=accounts[0])
 
     deckId = room.configParams(tableId)[-1]
 
@@ -841,8 +844,8 @@ def test_uneven_split(accounts, room, game, deckArgs, three_players_selected_dea
     assert tx.events[1].event_name == "DealRound"
     assert tx.events[1].event_arguments == {"table": tableId, "street": 5}
 
-    game.showCards(tableId, 2, sender=accounts[2])
-    tx = revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [0,3], True)
+    lists = revealCardsLists(deckArgs, deckId, 2, accounts[2], [0,3])
+    tx = game.showCards(tableId, 2, lists, sender=accounts[2])
     assert len(tx.events) == 2
     show_event = tx.events[0]
     assert show_event.event_name == "Show"
@@ -855,8 +858,8 @@ def test_uneven_split(accounts, room, game, deckArgs, three_players_selected_dea
             "table": tableId, "player": accounts[2].address,
             "card": 3, "show": 4}
 
-    game.showCards(tableId, 0, sender=accounts[0])
-    tx = revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [1,4], True)
+    lists = revealCardsLists(deckArgs, deckId, 0, accounts[0], [1,4])
+    tx = game.showCards(tableId, 0, lists, sender=accounts[0])
     assert len(tx.events) == 6
 
     # shown indices: 1/2 4/5 8 9 10 12 13
@@ -1015,8 +1018,8 @@ def test_side_pot(accounts, three_players_selected_dealer, deckArgs, room, game)
     with reverts("wrong phase"):
         revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2,5], True)
 
-    game.showCards(tableId, 1, sender=accounts[1])
-    tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1,4], True)
+    lists = revealCardsLists(deckArgs, deckId, 1, accounts[1], [1,4])
+    game.showCards(tableId, 1, lists, sender=accounts[1])
 
     tx = revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2,5], True)
 

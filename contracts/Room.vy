@@ -500,17 +500,33 @@ def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256
     self.endDeal(_tableId)
 
 @external
+def gameRevealCards(_tableId: uint256, _seatIndex: uint256, _data: uint256[7][2]):
+  self.gameAuth(_tableId)
+  deckId: uint256 = self.tables[_tableId].deckId
+  sender: address = self.tables[_tableId].seats[_seatIndex]
+  for i in range(2):
+    self._revealCard(deckId, _seatIndex, _tableId, sender, _data[i])
+  self.tables[_tableId].game.afterDeal(_tableId, Phase_SHOW)
+
+@internal
+def _revealCard(_deckId: uint256, _seatIndex: uint256,
+                _tableId: uint256, _sender: address, _data: uint256[7]) -> uint256:
+  cardIndex: uint256 = _data[0]
+  D.openCard(
+    _deckId, _seatIndex, cardIndex, _data[1],
+    Proof({gs: [_data[2], _data[3]], hs: [_data[4], _data[5]], scx: _data[6]}))
+  log Show(_tableId, _sender, cardIndex, _data[1])
+  return cardIndex
+
+@external
 def revealCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256[7], 26], _end: bool):
   self.validatePhase(_tableId, Phase_DEAL)
   self.checkAuth(_tableId, _seatIndex)
+  deckId: uint256 = self.tables[_tableId].deckId
   for data in _data:
-    cardIndex: uint256 = data[0]
+    cardIndex: uint256 = self._revealCard(deckId, _seatIndex, _tableId, msg.sender, data)
     assert self.tables[_tableId].drawIndex[cardIndex] == _seatIndex, "wrong player"
     assert self.tables[_tableId].requirement[cardIndex] == Req_SHOW, "reveal not allowed"
-    D.openCard(
-      self.tables[_tableId].deckId, _seatIndex, cardIndex, data[1],
-      Proof({gs: [data[2], data[3]], hs: [data[4], data[5]], scx: data[6]}))
-    log Show(_tableId, msg.sender, cardIndex, data[1])
   if _end:
     self.endDeal(_tableId)
 
