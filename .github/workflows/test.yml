@@ -12,9 +12,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@latest
+      - uses: actions/checkout@v3
       - uses: chill-viking/npm-ci@latest
         with:
           working-directory: './interface/'
-      - uses: ApeWorX/github-action@latest
+      - uses: ApeWorX/github-action@v2
       - run: ape test --network=:local
