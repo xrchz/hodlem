@@ -404,31 +404,37 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
 
 @internal
 def collectPots(_numPlayers: uint256, _gameId: uint256):
-  minBet: uint256 = max_value(uint256)
+  potLimit: uint256 = max_value(uint256)
   for seatIndex in range(MAX_SEATS):
     if seatIndex == _numPlayers: break
-    if 0 < self.games[_gameId].liveUntil[seatIndex]:
-      minBet = min(minBet, self.games[_gameId].bet[seatIndex])
+    if (0 < self.games[_gameId].liveUntil[seatIndex] and
+        self.games[_gameId].stack[seatIndex] == 0):
+      potLimit = min(potLimit, self.games[_gameId].bet[seatIndex])
 
   potLiveUntil: uint256 = 0
   nextLiveUntil: uint256 = 1
   for potIndex in range(MAX_SEATS):
     potLiveUntil = nextLiveUntil
     nextLiveUntil = unsafe_add(nextLiveUntil, 1)
-    nextMinBet: uint256 = max_value(uint256)
+    nextPotLimit: uint256 = max_value(uint256)
+    collected: bool = False
     for seatIndex in range(MAX_SEATS):
       if seatIndex == _numPlayers: break
       bet: uint256 = self.games[_gameId].bet[seatIndex]
       if 0 < bet:
-        amount: uint256 = min(bet, minBet)
+        amount: uint256 = min(bet, potLimit)
         nextBet: uint256 = unsafe_sub(bet, amount)
         self.games[_gameId].bet[seatIndex] = nextBet
         self.games[_gameId].pot[potIndex] = unsafe_add(self.games[_gameId].pot[potIndex], amount)
-        if self.games[_gameId].liveUntil[seatIndex] == potLiveUntil and 0 < nextBet:
-          self.games[_gameId].liveUntil[seatIndex] = nextLiveUntil
-          nextMinBet = min(nextMinBet, nextBet)
-    if nextMinBet == max_value(uint256): break
-    minBet = nextMinBet
+        collected = True
+        if 0 < nextBet:
+          if self.games[_gameId].liveUntil[seatIndex] == potLiveUntil:
+            self.games[_gameId].liveUntil[seatIndex] = nextLiveUntil
+          if (0 < self.games[_gameId].liveUntil[seatIndex] and
+              self.games[_gameId].stack[seatIndex] == 0):
+            nextPotLimit = min(nextPotLimit, nextBet)
+    if not collected: break
+    potLimit = nextPotLimit
 
 event CollectPot:
   table: indexed(uint256)
@@ -539,7 +545,8 @@ def afterAct(_tableId: uint256, _seatIndex: uint256):
       T.startShow(_tableId)
       # advance actionIndex till the first player in the rightmost pot
       self.games[_tableId].potIndex = self.rightmostPot(_tableId)
-      if self.games[_tableId].liveUntil[self.games[_tableId].actionIndex] <= self.games[_tableId].potIndex:
+      if (self.games[_tableId].liveUntil[self.games[_tableId].actionIndex] <=
+          self.games[_tableId].potIndex):
         self.games[_tableId].actionIndex = self.nextInPot(
           numPlayers, _tableId, self.games[_tableId].actionIndex, stopIndex)
       self.games[_tableId].actionBlock = block.number

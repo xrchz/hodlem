@@ -981,5 +981,43 @@ def test_side_pot(accounts, three_players_selected_dealer, deckArgs, room, game)
     revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, True)
 
     game.callBet(tableId, 0, sender=accounts[0])
-    game.raiseBet(tableId, 1, bigBlind, sender=accounts[1])
+    tx = game.raiseBet(tableId, 1, bigBlind, sender=accounts[1])
+    assert tx.events[0].event_name == "RaiseBet"
+    assert tx.events[0].event_arguments == {
+            "table": tableId, "seat": 1,
+            "bet": bigBlind, "placed": bigBlind}
+    tx = game.callBet(tableId, 0, sender=accounts[0])
+    assert tx.events[0].event_name == "CallBet"
+    assert tx.events[0].event_arguments == {
+            "table": tableId, "seat": 0,
+            "bet": bigBlind, "placed": bigBlind}
+
+    cards   = [11]
+    drawnTo = [2]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo)
+    revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, True)
+
     game.callBet(tableId, 0, sender=accounts[0])
+    tx = game.raiseBet(tableId, 1, bigBlind, sender=accounts[1])
+    assert tx.events[0].event_name == "RaiseBet"
+    assert tx.events[0].event_arguments == {
+            "table": tableId, "seat": 1,
+            "bet": bigBlind, "placed": bigBlind}
+    tx = game.fold(tableId, 0, sender=accounts[0])
+
+    assert len(tx.events) == 3
+    assert tx.events[0].event_name == "Fold"
+    assert tx.events[0].event_arguments == {"table": tableId, "seat": 0}
+    assert tx.events[1].event_name == "CollectPot"
+    assert tx.events[1].event_arguments == {
+            "table": tableId,
+            "seat": 1,
+            "pot": 3 * bigBlind}
+    assert tx.events[2].event_name == "DealRound"
+    assert tx.events[2].event_arguments == {
+            "table": tableId,
+            "street": 4}
+
+    assert False, "wip"
