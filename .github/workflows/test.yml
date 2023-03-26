@@ -8,17 +8,11 @@ on:
       - 'interface/*.json'
       - 'tests/*.py'
 jobs:
-  checkout:
-    steps:
-      uses: actions/checkout@latest
-  install:
-    needs: checkout
-    steps:
-      uses: ApeWorX/github-action@latest
-      uses: chill-viking/npm-ci@latest
-      with:
-        working-directory: './interface/'
   test:
-    needs: install
     steps:
-      run: ape test --network=:local
+      - uses: actions/checkout@latest
+      - uses: chill-viking/npm-ci@latest
+        with:
+          working-directory: './interface/'
+      - uses: ApeWorX/github-action@latest
+      - run: ape test --network=:local
