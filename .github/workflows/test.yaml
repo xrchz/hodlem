@@ -1,0 +1,23 @@
+on:
+  push:
+    paths:
+      - '**.yaml'
+      - 'contracts/*.vy'
+      - 'interface/*.js'
+      - '!interface/run.js'
+      - '!interface/script.js'
+      - 'interface/*.json'
+      - 'tests/*.py'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: chill-viking/npm-ci@latest
+        with:
+          working_directory: ./interface
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: ApeWorX/github-action@v2
+        with:
+          python-version: '3.10'
+      - run: ape test --network=:local
