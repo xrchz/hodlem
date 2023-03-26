@@ -9,13 +9,16 @@ on:
       - 'tests/*.py'
 jobs:
   checkout:
-    uses: actions/checkout@latest
+    steps:
+      uses: actions/checkout@latest
   install:
     needs: checkout
-    uses: ApeWorX/github-action@latest
-    uses: chill-viking/npm-ci@latest
-    with:
-      working-directory: './interface/'
+    steps:
+      uses: ApeWorX/github-action@latest
+      uses: chill-viking/npm-ci@latest
+      with:
+        working-directory: './interface/'
   test:
     needs: install
-    run: ape test --network=:local
+    steps:
+      run: ape test --network=:local
