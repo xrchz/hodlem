@@ -258,7 +258,7 @@ def afterDeal(_tableId: uint256, _phase: uint256):
           self.games[_tableId].board[boardIndex] = T.cardAt(_tableId, cardIndex)
         elif b == 0: break
       if self.games[_tableId].actionBlock == empty(uint256):
-          # skip to showdown when all players are all-in
+          # skip to showdown when all but at most one players are all-in
           self.afterAct(_tableId, self.games[_tableId].dealer)
       else:
         self.games[_tableId].actionBlock = block.number
@@ -403,12 +403,17 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
   self.games[_tableId].actionBlock = empty(uint256)
 
 @internal
+@view
+def isAllIn(_gameId: uint256, _seatIndex: uint256) -> bool:
+  return (0 < self.games[_gameId].liveUntil[_seatIndex] and
+          self.games[_gameId].stack[_seatIndex] == 0)
+
+@internal
 def collectPots(_numPlayers: uint256, _gameId: uint256):
   potLimit: uint256 = max_value(uint256)
   for seatIndex in range(MAX_SEATS):
     if seatIndex == _numPlayers: break
-    if (0 < self.games[_gameId].liveUntil[seatIndex] and
-        self.games[_gameId].stack[seatIndex] == 0):
+    if self.isAllIn(_gameId, seatIndex):
       potLimit = min(potLimit, self.games[_gameId].bet[seatIndex])
 
   potLiveUntil: uint256 = 0
@@ -430,8 +435,7 @@ def collectPots(_numPlayers: uint256, _gameId: uint256):
         if 0 < nextBet:
           if self.games[_gameId].liveUntil[seatIndex] == potLiveUntil:
             self.games[_gameId].liveUntil[seatIndex] = nextLiveUntil
-          if (0 < self.games[_gameId].liveUntil[seatIndex] and
-              self.games[_gameId].stack[seatIndex] == 0):
+          if self.isAllIn(_gameId, seatIndex):
             nextPotLimit = min(nextPotLimit, nextBet)
     if not collected: break
     potLimit = nextPotLimit
@@ -497,12 +501,17 @@ def gameOver(_numPlayers: uint256, _tableId: uint256):
 @internal
 def drawNextCard(_tableId: uint256):
   self.games[_tableId].minRaise = shift(self.smallBlind(_tableId), 1)
+  numPlayers: uint256 = T.numPlayers(_tableId)
   dealer: uint256 = self.games[_tableId].dealer
-  self.games[_tableId].actionIndex = self.roundNextActor(
-    T.numPlayers(_tableId), _tableId, dealer, dealer)
+  actor: uint256 = self.roundNextActor(numPlayers, _tableId, dealer, dealer)
+  self.games[_tableId].actionIndex = actor
   self.games[_tableId].actionBlock = empty(uint256)
-  # for the allAllIn condition, dealer may not be all-in: either way deals to showdown
-  notAllAllIn: bool = self.games[_tableId].actionIndex != dealer
+  notAtMostOneNotAllIn: bool = True
+  if actor == dealer:
+    notAtMostOneNotAllIn = False
+  elif (self.roundNextActor(numPlayers, _tableId, actor, dealer) == dealer and
+        self.isAllIn(_tableId, dealer)):
+    notAtMostOneNotAllIn = False
   done: bool = False
   for street in range(2, 5):
     if self.games[_tableId].board[street] == empty(uint256):
@@ -513,7 +522,7 @@ def drawNextCard(_tableId: uint256):
           self.drawToBoard(_tableId, drawIndex)
       else:
         self.drawToBoard(_tableId, street)
-      done = notAllAllIn
+      done = notAtMostOneNotAllIn
     if done:
       self.games[_tableId].betIndex = self.games[_tableId].actionIndex
       self.games[_tableId].stopIndex = self.games[_tableId].actionIndex
