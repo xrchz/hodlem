@@ -1,0 +1,21 @@
+on:
+  push:
+    paths:
+      - 'contracts/*.vy'
+      - 'interface/*.js'
+      - '!interface/run.js'
+      - '!interface/script.js'
+      - 'interface/*.json'
+      - 'tests/*.py'
+jobs:
+  checkout:
+    uses: actions/checkout@latest
+  install:
+    needs: checkout
+    uses: ApeWorX/github-action@latest
+    uses: chill-viking/npm-ci@latest
+    with:
+      working-directory: './interface/'
+  test:
+    needs: install
+    run: ape test --network=:local
