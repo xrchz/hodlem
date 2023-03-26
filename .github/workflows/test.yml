@@ -15,6 +15,6 @@ jobs:
       - uses: actions/checkout@v3
       - uses: chill-viking/npm-ci@latest
         with:
-          working-directory: './interface/'
+          working_directory: './interface/'
       - uses: ApeWorX/github-action@v2
       - run: ape test --network=:local
