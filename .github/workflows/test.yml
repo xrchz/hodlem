@@ -1,6 +1,7 @@
 on:
   push:
     paths:
+      - '.github/**'
       - 'contracts/*.vy'
       - 'interface/*.js'
       - '!interface/run.js'
