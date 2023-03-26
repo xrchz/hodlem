@@ -18,4 +18,6 @@ jobs:
           working_directory: ./interface
       - uses: foundry-rs/foundry-toolchain@v1
       - uses: ApeWorX/github-action@v2
+        with:
+          python-version: 3.10
       - run: ape test --network=:local
