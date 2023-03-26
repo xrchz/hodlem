@@ -1001,23 +1001,24 @@ def test_side_pot(accounts, three_players_selected_dealer, deckArgs, room, game)
     decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
     decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
     decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo)
-    revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards)
+    with reverts("reveal not allowed"):
+        revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2,5])
+    tx = revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, True)
 
-    with reverts("unauthorised"):
-        game.raiseBet(tableId, 1, 2 * bigBlind, sender=accounts[1])
-
-    tx = revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2,5], True)
-
-    assert len(tx.events) == 3
+    assert len(tx.events) == 2
     assert tx.events[0].event_name == "Show"
-    assert tx.events[1].event_name == "Show"
-    assert tx.events[2].event_name == "DealRound"
+    assert tx.events[1].event_name == "DealRound"
 
     with reverts("unauthorised"):
         game.raiseBet(tableId, 1, 2 * bigBlind, sender=accounts[1])
+
+    with reverts("wrong phase"):
+        revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2,5], True)
 
     game.showCards(tableId, 1, sender=accounts[1])
     tx = revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1,4], True)
+
+    tx = revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2,5], True)
 
     assert len(tx.events) == 5
     assert tx.events[0].event_name == "Show"
