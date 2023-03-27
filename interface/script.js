@@ -176,7 +176,7 @@ socket.on('logs', (id, newLogs) => {
       log.args[1] = log.args[1] ? 'Verify' : 'Submit'
     }
     if (log.name === 'DealRound' && typeof log.args[0] !== 'string') {
-      log.args[0] = ['Hole Cards', 'Flop', 'Turn', 'River'][log.args[0] - 1]
+      log.args[0] = ['Hole Cards', 'Flop', 'Turn', 'River', 'Showdown'][log.args[0] - 1]
     }
     if (typeof log.args[0] === 'string' && log.args[0].startsWith('0x') &&
         log.name !== 'JoinTable') {

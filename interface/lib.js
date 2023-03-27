@@ -246,7 +246,7 @@ export async function decryptCards(db, deck, socket, tableId, cardIndices) {
   return result
 }
 
-async function lookAtCard(db, deck, socket, tableId, deckId, cardIndex) {
+export async function lookAtCard(db, deck, socket, tableId, deckId, cardIndex) {
   const secret = BigInt(await db.getData(`/${socket.account.address}/${tableId}/shuffle/secret`))
   const inverse = invert(secret, bn254.CURVE.n)
   const bases = (await deck.baseCards(deckId)).map(c => bigIntegersToPoint(c))

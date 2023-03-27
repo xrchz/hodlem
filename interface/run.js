@@ -7,7 +7,7 @@ import * as path from 'node:path'
 import { createServer } from 'http'
 import { Server as SocketIOServer } from 'socket.io'
 import { JsonDB, Config as JsonDBConfig } from 'node-json-db'
-import { submitPrep, verifyPrep, shuffle, verifyShuffle, decryptCards, revealCards } from './lib.js'
+import { submitPrep, verifyPrep, shuffle, verifyShuffle, decryptCards, lookAtCard, revealCards } from './lib.js'
 
 const app = express()
 const dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -224,7 +224,7 @@ async function refreshActiveGames(socket) {
     data.pot = gameData.pot.slice(0, numPlayers).flatMap(p => p.isZero() ? [] : [ethers.utils.formatEther(p)])
     if (data.phase > Phase_DEAL || (data.phase === Phase_DEAL && data.pot.length)) {
       for (const idx of gameData.hands[data.seatIndex])
-        data.hand.push((await lookAtCard(socket, id, deckId, idx)).openIndex)
+        data.hand.push((await lookAtCard(db, deck, socket, id, deckId, idx)).openIndex)
     }
     if (!data.pot.length) data.pot.push('0')
     const betsTotal = playerBets.reduce((a, b) => a.add(b))
@@ -562,9 +562,24 @@ io.on('connection', async socket => {
     }
   })
 
-  socket.on('foldCards', simpleTxn(socket, game, 'foldCards'))
+  socket.on('show', async (tableId, seatIndex) => {
+    try {
+      const indices = (await game.games(tableId)).hands[seatIndex].map(n => n.toNumber())
+      const data = await revealCards(db, deck, socket, tableId, indices)
+      socket.emit('requestTransaction',
+        await game.connect(socket.account).populateTransaction
+        .showCards(
+          tableId, seatIndex, data, {
+            maxFeePerGas: socket.feeData.maxFeePerGas,
+            maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas
+          }))
+    }
+    catch (e) {
+      socket.emit('errorMsg', e.toString())
+    }
+  })
 
-  socket.on('show', simpleTxn(socket, game, 'showCards'))
+  socket.on('foldCards', simpleTxn(socket, game, 'foldCards'))
 
   socket.on('fold', simpleTxn(socket, game, 'fold'))
 
