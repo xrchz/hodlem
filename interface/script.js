@@ -131,6 +131,8 @@ rejectTxnButton.addEventListener('click', (e) => {
 
 const emptyAddress = '0x0000000000000000000000000000000000000000'
 
+const rankNames = ['Deuce', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King', 'Ace']
+
 function cardSpan(card) {
   const span = document.createElement('span')
   span.classList.add('card')
@@ -143,11 +145,24 @@ function cardSpan(card) {
     codepoint += rank === 12 ? 1 : rank + 2 + (9 < rank)
     const suitName = ['Spades', 'Hearts', 'Diamonds', 'Clubs'][suit]
     span.classList.add(suitName)
-    const rankName = ['Deuce', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King', 'Ace'][rank]
+    const rankName = rankNames[rank]
     span.title = `${rankName} of ${suitName}`
     span.innerText = String.fromCodePoint(codepoint)
   }
   return span
+}
+
+function parseHandRank(r) {
+  const t = ['None', 'High Card', 'Pair', 'Two Pair', 'Set', 'Straight', 'Flush', 'Boat', 'Quads', 'Straight Flush'][r >> BigInt(5 * 8)]
+  const mask = BigInt('0xff')
+  const a = []
+  a.push((r >> BigInt(4 * 8)) & mask)
+  a.push((r >> BigInt(3 * 8)) & mask)
+  a.push((r >> BigInt(2 * 8)) & mask)
+  a.push((r >> BigInt(1 * 8)) & mask)
+  a.push(r & mask)
+  console.log(JSON.stringify(a.map(n => n.toString())))
+  return `${t}: [${a.flatMap(n => n === 0n ? [] : [rankNames[n]]).join(', ')}]`
 }
 
 const logs = new Map()
@@ -177,6 +192,9 @@ socket.on('logs', (id, newLogs) => {
     }
     if (log.name === 'DealRound' && typeof log.args[0] !== 'string') {
       log.args[0] = ['Hole Cards', 'Flop', 'Turn', 'River', 'Showdown'][log.args[0] - 1]
+    }
+    if (log.name === 'ShowHand' && log.args[1].startsWith('0x')) {
+      log.args[1] = parseHandRank(BigInt(log.args[1]))
     }
     if (typeof log.args[0] === 'string' && log.args[0].startsWith('0x') &&
         log.name !== 'JoinTable') {
