@@ -432,11 +432,6 @@ def reshuffle(_tableId: uint256):
   self.tables[_tableId].phase = Phase_SHUF
   self.tables[_tableId].commitBlock = block.number
 
-@external
-def markAbsent(_tableId: uint256, _seatIndex: uint256):
-  self.gameAuth(_tableId)
-  self.tables[_tableId].present &= ~shift(1, convert(_seatIndex, int128)) # TODO: https://github.com/vyperlang/vyper/issues/3309
-
 # deal
 
 event Deal:
@@ -570,6 +565,16 @@ def startShow(_tableId: uint256):
   self.gameAuth(_tableId)
   self.tables[_tableId].phase = Phase_SHOW
 
+event Eliminate:
+  table: indexed(uint256)
+  seat: indexed(uint256)
+
+@external
+def eliminate(_tableId: uint256, _seatIndex: uint256):
+  self.gameAuth(_tableId)
+  self.tables[_tableId].present &= ~shift(1, convert(_seatIndex, int128)) # TODO: https://github.com/vyperlang/vyper/issues/3309
+  log Eliminate(_tableId, _seatIndex)
+
 # view info
 
 @external
@@ -645,6 +650,11 @@ def level(_tableId: uint256, level: uint256) -> uint256:
 @view
 def shuffled(_tableId: uint256) -> uint256:
   return self.tables[_tableId].shuffled
+
+@external
+@view
+def present(_tableId: uint256, _seatIndex: uint256) -> bool:
+  return self.tables[_tableId].present & shift(1, convert(_seatIndex, int128)) != 0 # TODO: https://github.com/vyperlang/vyper/issues/3309
 
 # for off-chain viewing
 

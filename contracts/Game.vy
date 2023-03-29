@@ -426,10 +426,6 @@ def autoShow(_numPlayers: uint256, _tableId: uint256):
   if needDeal:
     T.startDeal(_tableId, Phase_SHOW)
 
-event Eliminate:
-  table: indexed(uint256)
-  seat: indexed(uint256)
-
 @internal
 def nextHand(_numPlayers: uint256, _tableId: uint256):
   self.games[_tableId].numInHand = 0
@@ -437,8 +433,7 @@ def nextHand(_numPlayers: uint256, _tableId: uint256):
     if seatIndex == _numPlayers:
       break
     if self.games[_tableId].stack[seatIndex] == empty(uint256):
-      T.markAbsent(_tableId, seatIndex)
-      log Eliminate(_tableId, seatIndex)
+      T.eliminate(_tableId, seatIndex)
     else:
       self.games[_tableId].numInHand = unsafe_add(
         self.games[_tableId].numInHand, 1)
@@ -537,20 +532,19 @@ def playersLeft(_numPlayers: uint256, _gameId: uint256) -> uint256:
       playersLeft = unsafe_add(playersLeft, 1)
   return playersLeft
 
-event EndGame:
-  table: indexed(uint256)
-
 @internal
 def gameOver(_numPlayers: uint256, _tableId: uint256):
   # everyone gets their stack + bond
+  stack: uint256 = empty(uint256)
   for seatIndex in range(MAX_SEATS):
-    if seatIndex == _numPlayers:
-      break
-    T.refundPlayer(_tableId, seatIndex, self.games[_tableId].stack[seatIndex])
+    if seatIndex == _numPlayers: break
+    stack = self.games[_tableId].stack[seatIndex]
+    if stack == 0 and T.present(_tableId, seatIndex):
+      T.eliminate(_tableId, seatIndex)
+    T.refundPlayer(_tableId, seatIndex, stack)
   # delete the game
   self.games[_tableId] = empty(Game)
   T.deleteTable(_tableId)
-  log EndGame(_tableId)
 
 @internal
 def drawNextCard(_tableId: uint256):
