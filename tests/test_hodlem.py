@@ -59,6 +59,80 @@ def test_join_leave_join(accounts, room, game):
         room.joinTable(tableId, seatIndex, sender=accounts[0])
     room.joinTable(tableId, seatIndex, sender=accounts[0], value="300 wei")
 
+def test_too_many_players(accounts, room, game):
+    config = dict(
+            buyIn=1000,
+            bond=2000,
+            startsWith=10,
+            untilLeft=1,
+            structure=[10, 20, 30, 40],
+            levelBlocks=20,
+            verifRounds=4,
+            prepBlocks=10,
+            shuffBlocks=10,
+            verifBlocks=15,
+            dealBlocks=10,
+            actBlocks=15)
+    with reverts("invalid startsWith"):
+        room.createTable(0, config, game.address,
+                         sender=accounts[1], value="3000 wei")
+
+def test_max_players(accounts, room, game):
+    config = dict(
+            buyIn=1000,
+            bond=2000,
+            startsWith=9,
+            untilLeft=1,
+            structure=[10, 20, 30, 40],
+            levelBlocks=20,
+            verifRounds=4,
+            prepBlocks=10,
+            shuffBlocks=10,
+            verifBlocks=15,
+            dealBlocks=10,
+            actBlocks=15)
+    tx = room.createTable(0, config, game.address,
+                          sender=accounts[1], value="3000 wei")
+    assert len(tx.events) == 1
+    assert tx.events[0].event_name == "JoinTable"
+
+def test_one_too_many_until_left(accounts, room, game):
+    config = dict(
+            buyIn=1000,
+            bond=2000,
+            startsWith=3,
+            untilLeft=3,
+            structure=[10, 20, 30, 40],
+            levelBlocks=20,
+            verifRounds=4,
+            prepBlocks=10,
+            shuffBlocks=10,
+            verifBlocks=15,
+            dealBlocks=10,
+            actBlocks=15)
+    with reverts("invalid untilLeft"):
+        room.createTable(0, config, game.address,
+                         sender=accounts[1], value="3000 wei")
+
+def test_one_level(accounts, room, game):
+    config = dict(
+            buyIn=1000,
+            bond=2000,
+            startsWith=3,
+            untilLeft=2,
+            structure=[100],
+            levelBlocks=20,
+            verifRounds=4,
+            prepBlocks=10,
+            shuffBlocks=10,
+            verifBlocks=15,
+            dealBlocks=10,
+            actBlocks=15)
+    tx = room.createTable(0, config, game.address,
+                          sender=accounts[0], value="3000 wei")
+    assert len(tx.events) == 1
+    assert tx.events[0].event_name == "JoinTable"
+
 def test_submit_prep_timeout(networks, accounts, chain, room, game):
     prepBlocks = 2
     tx = room.createTable(
