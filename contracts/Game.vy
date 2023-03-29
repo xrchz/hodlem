@@ -63,6 +63,26 @@ def __init__(roomAddress: address):
 def roomAddress() -> address:
   return T.address
 
+@internal
+@pure
+def ascending(_a: DynArray[uint256, MAX_LEVELS]) -> bool:
+  x: uint256 = 0
+  for y in _a:
+    if y <= x:
+      return False
+    x = y
+  return True
+
+@external
+@pure
+def checkConfig(_config: Config, _seatIndex: uint256):
+  assert 1 < _config.startsWith and _config.startsWith <= MAX_SEATS, "invalid startsWith"
+  assert 0 < _config.untilLeft and _config.untilLeft < _config.startsWith, "invalid untilLeft"
+  assert 0 < len(_config.structure) and self.ascending(_config.structure), "invalid structure"
+  assert 0 < _config.buyIn, "invalid buyIn"
+  assert _seatIndex < _config.startsWith, "invalid seatIndex"
+  assert _config.startsWith * (_config.bond + _config.buyIn) <= max_value(uint256), "amounts too large"
+
 struct Game:
   startBlock:  uint256            # block number when game started
   stack:       uint256[MAX_SEATS] # stack at each seat (zero for eliminated or all-in players)

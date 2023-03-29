@@ -40,10 +40,6 @@ Phase_DEAL: constant(uint256) = 4 # drawing and possibly opening cards as curren
 Phase_PLAY: constant(uint256) = 5 # betting; new card revelations may become required
 Phase_SHOW: constant(uint256) = 6 # showdown; new card revelations may become required
 
-interface GameManager:
-  def afterShuffle(_tableId: uint256): nonpayable
-  def afterDeal(_tableId: uint256, _phase: uint256): nonpayable
-
 struct Config:
   buyIn:       uint256             # entry ticket price per player
   bond:        uint256             # liveness bond for each player
@@ -57,6 +53,11 @@ struct Config:
   verifBlocks: uint256             # blocks to submit shuffle verification
   dealBlocks:  uint256             # blocks to submit card decryptions
   actBlocks:   uint256             # blocks to act before folding can be triggered
+
+interface GameManager:
+  def checkConfig(_config: Config, _seatIndex: uint256): view
+  def afterShuffle(_tableId: uint256): nonpayable
+  def afterDeal(_tableId: uint256, _phase: uint256): nonpayable
 
 struct Table:
   config:      Config
@@ -136,16 +137,6 @@ def playerLeaveLive(_tableId: uint256, _player: address):
   log LeaveTable(_tableId, _player)
 
 @internal
-@pure
-def ascending(_a: DynArray[uint256, 100]) -> bool:
-  x: uint256 = 0
-  for y in _a:
-    if y <= x:
-      return False
-    x = y
-  return True
-
-@internal
 @view
 def validatePhase(_tableId: uint256, _phase: uint256):
   assert self.tables[_tableId].phase == _phase, "wrong phase"
@@ -163,12 +154,7 @@ def checkAuth(_tableId: uint256, _seatIndex: uint256):
 @external
 @payable
 def createTable(_seatIndex: uint256, _config: Config, _gameAddr: address) -> uint256:
-  assert 1 < _config.startsWith and _config.startsWith <= MAX_SEATS, "invalid startsWith"
-  assert 0 < _config.untilLeft and _config.untilLeft < _config.startsWith, "invalid untilLeft"
-  assert 0 < len(_config.structure) and self.ascending(_config.structure), "invalid structure"
-  assert 0 < _config.buyIn, "invalid buyIn"
-  assert _seatIndex < _config.startsWith, "invalid seatIndex"
-  assert _config.startsWith * (_config.bond + _config.buyIn) <= max_value(uint256), "amounts too large"
+  GameManager(_gameAddr).checkConfig(_config, _seatIndex)
   assert msg.value == unsafe_add(_config.bond, _config.buyIn), "incorrect bond + buyIn"
   tableId: uint256 = self.nextTableId
   self.tables[tableId].game = GameManager(_gameAddr)
