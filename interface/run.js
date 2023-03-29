@@ -90,10 +90,7 @@ game.on({ address: game.address, topics: [null, null, null, null] },
 
 async function refreshBalance(socket) {
   async function b() {
-    console.log(`querying balance for ${socket.account.address}...`)
-    const bal = await provider.getBalance(socket.account.address)
-    console.log(`...done [balance]`)
-    return bal
+    return (await provider.getBalance(socket.account.address))
   }
   socket.emit('balance',
     socket.account && socket.account.privateKey != ''
@@ -103,37 +100,29 @@ async function refreshBalance(socket) {
 
 async function refreshFeeData(socket) {
   if (!('customFees' in socket)) {
-    console.log(`querying fee data...`)
     socket.feeData = await provider.getFeeData()
-    console.log(`...done [fee]`)
     socket.emit('maxFeePerGas', ethers.utils.formatUnits(socket.feeData.maxFeePerGas, 'gwei'))
     socket.emit('maxPriorityFeePerGas', ethers.utils.formatUnits(socket.feeData.maxPriorityFeePerGas, 'gwei'))
   }
 }
 
 async function getPendingGames() {
-  console.log('querying pending games...')
   const tableIds = []
   let id = await room.nextWaitingTable(0)
-  console.log(`${id}... [pending]`)
   while (!ethers.BigNumber.from(id).isZero()) {
     tableIds.push(id)
     id = await room.nextWaitingTable(id)
-    console.log(`${id}... [pending]`)
    }
-  console.log('...done [pending]')
   return tableIds
 }
 
 async function getActiveGames(socket) {
-  console.log(`querying active games for ${socket.account.address}...`)
   const tableIds = []
   let id = await room.nextLiveTable(socket.account.address, 0)
   while (!ethers.BigNumber.from(id).isZero()) {
     tableIds.push(id)
     id = await room.nextLiveTable(socket.account.address, id)
   }
-  console.log('...done [active]')
   return tableIds
 }
 
@@ -155,7 +144,6 @@ async function getGameConfigs(socket, tableIds) {
   await Promise.all(tableIds.map(async idNum => {
     const id = idNum.toString()
     if (!(id in socket.gameConfigs)) {
-      console.log(`querying config for table ${id}...`)
       const data = {id: id}
       socket.gameConfigs[id] = data
       data.structure = await room.configStructure(idNum)
@@ -168,7 +156,6 @@ async function getGameConfigs(socket, tableIds) {
                                 : data[k].toNumber()]))
       data.formatted.id = data.id
       data.formatted.structure = data.structure.map(x => ethers.utils.formatEther(x))
-      console.log('...done [config]')
     }
   }))
 }
@@ -177,7 +164,6 @@ async function refreshPendingGames(socket) {
   const tableIds = await getPendingGames()
   await getGameConfigs(socket, tableIds)
   const seats = {}
-  console.log(`querying seats for pending tables...`)
   await Promise.all(tableIds.map(async idNum => {
     const id = idNum.toString()
     seats[id] = []
@@ -185,7 +171,6 @@ async function refreshPendingGames(socket) {
       seats[id].push(await room.playerAt(idNum, seatIndex))
     }
   }))
-  console.log(`...done [seats]`)
   socket.emit('pendingGames',
     tableIds.map(idNum => socket.gameConfigs[idNum.toString()].formatted),
     seats)
@@ -368,13 +353,11 @@ io.on('connection', async socket => {
   })
 
   socket.on('resetFees', async () => {
-    console.log('in reset fees')
     delete socket.customFees
     await refreshFeeData(socket)
   })
 
   socket.on('customFees', (maxFeePerGas, maxPriorityFeePerGas) => {
-    console.log(`Setting custom gas prices`)
     socket.customFees = {
       maxFeePerGas: ethers.utils.parseUnits(maxFeePerGas, 'gwei'),
       maxPriorityFeePerGas: ethers.utils.parseUnits(maxPriorityFeePerGas, 'gwei')
@@ -394,11 +377,8 @@ io.on('connection', async socket => {
 
   socket.on('transaction', async tx => {
     try {
-      console.log('sending transaction...')
       const response = await socket.account.sendTransaction(tx)
-      console.log(`awaiting receipt... [txn]`)
       const receipt = await response.wait()
-      console.log(`...done [txn]`)
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
