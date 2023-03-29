@@ -91,6 +91,7 @@ const sendButton = document.getElementById('sendButton')
 sendButton.addEventListener('click', (e) => {
   if (sendToElement.checkValidity() && sendAmountElement.checkValidity()) {
     socket.emit('send', sendToElement.value, sendAmountElement.value)
+    sendButton.disabled = true
   }
   else {
     sendToElement.reportValidity()

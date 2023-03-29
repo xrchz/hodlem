@@ -5,20 +5,14 @@
 
 body {
   font-family: 'DejaVu Sans', sans-serif;
-  font-size: large;
   background-color: #004;
   color: Lavender;
 }
 
 input {
-  font-size: large;
   background-color: DarkSlateBlue;
   color: PapayaWhip;
-}
-
-input[type=text] {
-  background-color: DarkSlateBlue;
-  color: PapayaWhip;
+  border: inset 1px Navy;
 }
 
 input[type=text]:disabled {
@@ -28,13 +22,22 @@ input[type=text]:disabled {
 input[type=button] {
   background-color: RoyalBlue;
   color: LightYellow;
+  border: outset 2px Gold;
 }
 
 input[type=button]:disabled {
   color: RoyalBlue;
   background-color: Navy;
+  border-color: RoyalBlue;
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+input[type=button].toggle {
+  background-color: SteelBlue;
+  color: SkyBlue;
+  border: solid 1px;
+  font-size: small;
 }
 
 .address {
@@ -49,7 +52,7 @@ input[type=button]:disabled {
   width: 18em;
 }
 
-dl + input[type="button"] {
+dl + input[type="button"], ul.logs + input[type="button"] {
   margin: auto;
   display: block;
 }
