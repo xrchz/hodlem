@@ -387,7 +387,7 @@ def three_players_shuffle(accounts, three_players_prepped, deckArgs, room, perms
     shuffle(deckArgs, accounts[2], verifRounds, deckId, perms[2], tableId, 2, room)
     verifyShuffle(deckArgs, accounts[0], deckId, 0, tableId, room)
     verifyShuffle(deckArgs, accounts[1], deckId, 1, tableId, room)
-    verifyShuffle(deckArgs, accounts[2], deckId, 2, tableId, room)
+    return verifyShuffle(deckArgs, accounts[2], deckId, 2, tableId, room)
 
 def readIntLists(f, z):
     a = []
@@ -1103,3 +1103,97 @@ def test_side_pot(accounts, three_players_selected_dealer, deckArgs, room, game)
     assert tx.events[2].event_name == "ShowHand"
     assert tx.events[3].event_name == "ShowHand"
     assert tx.events[4].event_name == "CollectPot"
+
+def test_all_in_blinds_eliminate(accounts, deckArgs, room, game):
+    config = dict(
+            buyIn=10,
+            bond=3000,
+            startsWith=3,
+            untilLeft=2,
+            structure=[10],
+            levelBlocks=50,
+            verifRounds=3,
+            prepBlocks=20,
+            shuffBlocks=25,
+            verifBlocks=35,
+            dealBlocks=15,
+            actBlocks=10)
+    value = f"{config['bond'] + config['buyIn']} wei"
+    tx = room.createTable(0, config, game.address, sender=accounts[0], value=value)
+    tableId = tx.return_value
+    tx = room.joinTable(tableId, 2, sender=accounts[2], value=value)
+    tx = room.joinTable(tableId, 1, sender=accounts[1], value=value)
+
+    submitPrep(deckArgs, accounts[0], room, tableId, 0)
+    submitPrep(deckArgs, accounts[1], room, tableId, 1)
+    submitPrep(deckArgs, accounts[2], room, tableId, 2)
+    verifyPrep(deckArgs, accounts[2], room, tableId, 2)
+    verifyPrep(deckArgs, accounts[1], room, tableId, 1)
+    verifyPrep(deckArgs, accounts[0], room, tableId, 0)
+
+    prepped = dict(tableId=tableId, config=config)
+    three_players_shuffle(accounts, prepped, deckArgs, room,
+                          two_players_empty_shuffle + (two_players_empty_shuffle[0],))
+
+    deckId = room.configParams(tableId)[-1]
+
+    cards = [0,1,2]
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, cards)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, cards)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, cards)
+
+    revealCards(deckArgs, deckId, 0, accounts[0], tableId, room, [0])
+    revealCards(deckArgs, deckId, 1, accounts[1], tableId, room, [1])
+    tx = revealCards(deckArgs, deckId, 2, accounts[2], tableId, room, [2], True)
+    assert len(tx.events) == 2
+    assert tx.events[-1].event_name == "SelectDealer"
+    dealer = tx.events[-1].event_arguments["seat"]
+    small = (dealer + 1) % 3
+    big = (small + 1) % 3
+
+    tx = three_players_shuffle(accounts, prepped, deckArgs, room,
+                               two_players_empty_shuffle + (two_players_empty_shuffle[1],))
+    assert len(tx.events) == 2
+    assert tx.events[-2].event_name == "Shuffle"
+    assert tx.events[-1].event_name == "DealRound"
+
+    cards   = list(range(6))
+    drawnTo = [small, big, dealer] * 2
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    tx = decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo, True)
+
+    # blinds are both all-in
+    with reverts("wrong turn"):
+        game.fold(tableId, small, sender=accounts[small])
+
+    tx = game.fold(tableId, dealer, sender=accounts[dealer])
+    assert len(tx.events) == 4
+    assert tx.events[0].event_name == 'Fold'
+
+    # deal the whole board
+    assert tx.events[1].event_name == 'DealRound'
+    assert tx.events[2].event_name == 'DealRound'
+    assert tx.events[3].event_name == 'DealRound'
+    cards = [7,8,9,11,13]
+    drawnTo = [dealer] * 5
+    decryptCards(deckArgs, deckId, 0, accounts[0], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 1, accounts[1], tableId, room, cards, drawnTo)
+    decryptCards(deckArgs, deckId, 2, accounts[2], tableId, room, cards, drawnTo)
+    revealCards(deckArgs, deckId, dealer, accounts[dealer], tableId, room, cards)
+    # and show cards
+    revealCards(deckArgs, deckId, small, accounts[small], tableId, room, [0,3])
+    tx = revealCards(deckArgs, deckId, big, accounts[big], tableId, room, [1,4], True)
+
+    assert len(tx.events) == 11
+    assert tx.events[0].event_name == 'Show'
+    assert tx.events[1].event_name == 'Show'
+    assert tx.events[2].event_name == 'DealRound'
+    assert tx.events[3].event_name == 'ShowHand'
+    assert tx.events[4].event_name == 'ShowHand'
+    assert tx.events[5].event_name == 'CollectPot'
+    assert tx.events[6].event_name == 'Eliminate'
+    assert tx.events[7].event_name == 'LeaveTable'
+    assert tx.events[8].event_name == 'LeaveTable'
+    assert tx.events[9].event_name == 'LeaveTable'
+    assert tx.events[10].event_name == 'EndGame'
