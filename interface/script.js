@@ -47,6 +47,9 @@ const privkeyElement = document.getElementById('privkey')
 const newAccountButton = document.getElementById('newAccount')
 const hidePrivkeyButton = document.getElementById('hidePrivKey')
 
+const walletDiv = document.getElementById('wallet')
+const hideWalletButton = document.getElementById('hideWallet')
+
 const joinDiv = document.getElementById('joinDiv')
 const playDiv = document.getElementById('playDiv')
 
@@ -96,6 +99,21 @@ function customFees() {
 
 maxFeeElement.addEventListener('change', customFees)
 prioFeeElement.addEventListener('change', customFees)
+
+hideWalletButton.addEventListener('click', (e) => {
+  if (wallet.classList.contains('hidden')) {
+    wallet.classList.remove('hidden')
+    hideWalletButton.value = 'Hide Wallet'
+    if (!e.fromScript)
+      socket.emit('deletePreference', 'wallet', '')
+  }
+  else {
+    wallet.classList.add('hidden')
+    hideWalletButton.value = 'Show Wallet'
+    if (!e.fromScript)
+      socket.emit('addPreference', 'wallet', '')
+  }
+})
 
 hidePrivkeyButton.addEventListener('click', (e) => {
   if (privkeyElement.classList.contains('hidden')) {
@@ -159,6 +177,10 @@ socket.on('requestTransaction', (tx, formatted) => {
     acceptTxnButton.dispatchEvent(e)
   }
   else {
+    if (walletDiv.classList.contains('hidden')) {
+      hideWalletButton.disabled = true
+      walletDiv.classList.remove('hidden')
+    }
     transactionDiv.classList.remove('hidden')
     Object.entries(formatted).forEach(([key, value]) => {
       fragment.appendChild(document.createElement('dt')).innerText = key
@@ -171,11 +193,19 @@ socket.on('requestTransaction', (tx, formatted) => {
 acceptTxnButton.addEventListener('click', (e) => {
   socket.emit('transaction', txnInfoElement.data)
   transactionDiv.classList.add('hidden')
+  if (hideWalletButton.disabled) {
+    hideWalletButton.disabled = false
+    walletDiv.classList.add('hidden')
+  }
 })
 
 rejectTxnButton.addEventListener('click', (e) => {
   delete txnInfoElement.data
   transactionDiv.classList.add('hidden')
+  if (hideWalletButton.disabled) {
+    hideWalletButton.disabled = false
+    walletDiv.classList.add('hidden')
+  }
   document.querySelectorAll('input.txnRequester').forEach(b => b.disabled = false)
 })
 
@@ -239,6 +269,14 @@ socket.on('preferences', (dict) => {
     const e = new Event('click')
     e.fromScript = true
     hidePrivkeyButton.dispatchEvent(e)
+  }
+
+  if ('wallet' in dict &&
+      ((dict.wallet.length && hideWalletButton.value === 'Hide Wallet') ||
+       (!dict.wallet.length && hideWalletButton.value === 'Show Wallet'))) {
+    const e = new Event('click')
+    e.fromScript = true
+    hideWalletButton.dispatchEvent(e)
   }
 
   const newHideConfig = new Set(dict.config)
@@ -641,7 +679,10 @@ socket.on('activeGames', (configs, data) => {
           seat.title += ' (dealer)'
         }
         if (actionOn.has(i)) pli.classList.add('action')
-        if (i === di.seatIndex) pli.classList.add('self')
+        if (i === di.seatIndex) {
+          pli.classList.add('self')
+          seat.title += ' (you)'
+        }
       })
     }
     activeGames.get(config.id).querySelector('ul.game').replaceChildren(ul)

@@ -9,6 +9,11 @@ body {
   color: Lavender;
 }
 
+h2 {
+  color: Plum;
+  font-size: medium;
+}
+
 input {
   background-color: DarkSlateBlue;
   color: PapayaWhip;
@@ -90,6 +95,9 @@ ul.game {
   padding: 1em;
   max-width: 40em;
   margin: auto;
+  background-color: #020;
+  border: solid;
+  border-color: Black;
 }
 
 ul.game > li {
@@ -145,16 +153,23 @@ ul.stacks > li {
 }
 
 li.action {
-  background-color: #008;
+  background-color: #040;
 }
 
 li.self > span.seat {
-  background-color: Indigo;
+  background-color: #660;
+  color: Pink;
+}
+
+li.action > span.seat {
+  color: Violet;
 }
 
 li.dealer > span.seat {
-  border: 1px solid GoldenRod;
-  border-radius: 50%;
+  border: 2px solid GoldenRod;
+  border-radius: 40%;
+  padding-left: 2px;
+  padding-right: 2px;
 }
 
 span.seat::before {
