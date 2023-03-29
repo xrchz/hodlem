@@ -75,6 +75,12 @@ dd {
   margin: 0;
 }
 
+dl#txnInfo {
+  max-width: 80em;
+  overflow: auto;
+  flex-flow: column nowrap;
+}
+
 ul {
   list-style-type: none;
   padding: 0;

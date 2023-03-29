@@ -321,10 +321,23 @@ async function changeAccount(socket) {
   await refreshPreferences(socket)
 }
 
+function requestTransaction(socket, method, tx) {
+  const formatted = {...tx}
+  formatted.value = ethers.BigNumber.isBigNumber(formatted.value) ?
+                    ethers.utils.formatEther(formatted.value) : '0'
+  formatted.value += ' ether'
+  formatted.maxFeePerGas = ethers.utils.formatUnits(formatted.maxFeePerGas, 'gwei')
+  formatted.maxFeePerGas += ' gwei'
+  formatted.maxPriorityFeePerGas = ethers.utils.formatUnits(formatted.maxPriorityFeePerGas, 'gwei')
+  formatted.maxPriorityFeePerGas += ' gwei'
+  formatted.method = method
+  socket.emit('requestTransaction', tx, formatted)
+}
+
 function simpleTxn(socket, contract, func) {
   return async (...args) => {
     try {
-      socket.emit('requestTransaction',
+      requestTransaction(socket, func,
         await contract.connect(socket.account).populateTransaction[func](
           ...args, {
             maxFeePerGas: socket.feeData.maxFeePerGas,
@@ -394,14 +407,15 @@ io.on('connection', async socket => {
 
   socket.on('send', async (to, amount) => {
     try {
-      socket.emit('requestTransaction',
-        await socket.account.populateTransaction({
+      const tx = await socket.account
+        .populateTransaction({
           to: to,
           type: 2,
           maxFeePerGas: socket.feeData.maxFeePerGas,
           maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas,
           value: ethers.utils.parseEther(amount)
-        }))
+        })
+      requestTransaction(socket, 'send', tx)
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
@@ -447,7 +461,7 @@ io.on('connection', async socket => {
       config.bond = ethers.utils.parseEther(config.bond)
       config.gameAddress = game.address
       config.structure = config.structure.split(/\s/).map(x => ethers.utils.parseEther(x))
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'createTable',
         await room.connect(socket.account).populateTransaction
         .createTable(
           seatIndex, config, game.address, {
@@ -465,7 +479,7 @@ io.on('connection', async socket => {
 
   socket.on('joinGame', async (tableId, seatIndex) => {
     try {
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'joinTable',
         await room.connect(socket.account).populateTransaction
         .joinTable(
           tableId, seatIndex, {
@@ -482,7 +496,7 @@ io.on('connection', async socket => {
   socket.on('submitPrep', async (tableId, seatIndex) => {
     try {
       const hash = await submitPrep(db, socket, tableId)
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'submitPrep',
         await room.connect(socket.account).populateTransaction
         .submitPrep(
           tableId, seatIndex, hash, {
@@ -498,7 +512,7 @@ io.on('connection', async socket => {
   socket.on('verifyPrep', async (tableId, seatIndex) => {
     try {
       const deckPrep = await verifyPrep(db, socket, tableId)
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'verifyPrep',
         await room.connect(socket.account).populateTransaction
         .verifyPrep(
           tableId, seatIndex, deckPrep, {
@@ -514,7 +528,7 @@ io.on('connection', async socket => {
   socket.on('submitShuffle', async tableId => {
     try {
       const [shuffledCards, commitmentHash] = await shuffle(db, deck, socket, tableId)
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'submitShuffle',
         await room.connect(socket.account).populateTransaction
         .submitShuffle(
           tableId, socket.activeGames[tableId].seatIndex,
@@ -531,7 +545,7 @@ io.on('connection', async socket => {
   socket.on('verifyShuffle', async tableId => {
     try {
       const [commitment, scalars, permutations] = await verifyShuffle(db, deck, socket, tableId)
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'verifyShuffle',
         await room.connect(socket.account).populateTransaction
         .verifyShuffle(
           tableId, socket.activeGames[tableId].seatIndex,
@@ -560,7 +574,7 @@ io.on('connection', async socket => {
         console.log(`failed decrypt with ${e.toString()}`)
         args[3] = false
       }
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'decryptCards',
         await room_a.populateTransaction.decryptCards(...args))
     }
     catch (e) {
@@ -583,7 +597,7 @@ io.on('connection', async socket => {
         console.log(`failed reveal with ${e.toString()}`)
         args[3] = false
       }
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'revealCards',
         await room_a.populateTransaction.revealCards(...args))
     }
     catch (e) {
@@ -595,7 +609,7 @@ io.on('connection', async socket => {
     try {
       const indices = (await game.games(tableId)).hands[seatIndex].map(n => n.toNumber())
       const data = await revealCards(db, deck, socket, tableId, indices)
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'showCards',
         await game.connect(socket.account).populateTransaction
         .showCards(
           tableId, seatIndex, data, {
@@ -617,7 +631,7 @@ io.on('connection', async socket => {
   socket.on('raise', async (tableId, seatIndex, raiseBy, bet) => {
     try {
       const raiseTo = ethers.utils.parseEther(bet).add(ethers.utils.parseEther(raiseBy))
-      socket.emit('requestTransaction',
+      requestTransaction(socket, 'raiseBet',
         await game.connect(socket.account).populateTransaction
         .raiseBet(
           tableId, seatIndex, raiseTo, {

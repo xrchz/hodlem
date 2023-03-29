@@ -13,9 +13,11 @@
     </div>
     <section id=networkDiv>
       <div id=transaction class=hidden>
-        <p id=txnInfo></p>
-        <input id=acceptTxn type=button value=Send></input>
-        <input id=rejectTxn type=button value=Cancel></input>
+        <dl id=txnInfo></dl>
+        <div>
+          <input id=acceptTxn type=button value=Send></input>
+          <input id=rejectTxn type=button value=Cancel></input>
+        </div>
       </div>
       <label>Automatically send transactions: <input id=sendTxns type=checkbox checked=true></input></label>
       <input id=resetFees type=button class=toggle value=Reset></input>

@@ -1,12 +1,11 @@
 const socket = io()
 
 // TODO: show next small blind value (in config)
-// TODO: make hide/show stuff more persistent: use the db?
 // TODO: add max value for raise/bet based on stack size
 // TODO: add slider for raise/bet value setting
 // TODO: make account/send details hideable and/or move to bottom of page?
+// TODO: input validation for send funds form
 // TODO: buttons should be disabled based on whether a transaction is actually pending
-// TODO: format transaction preview better (e.g. format bignumbers)
 // TODO: hover over seat number to see address also for Game logs
 // TODO: add option to choose multiplier for formatting amounts (e.g. gwei)
 // TODO: add configurable rake and gas refund accounting?
@@ -152,8 +151,8 @@ sendTxnsCheckbox.addEventListener('change', e => {
     socket.emit(sendTxnsCheckbox.checked ? 'addPreference' : 'deletePreference', 'send', '')
 })
 
-socket.on('requestTransaction', data => {
-  txnInfoElement.data = data
+socket.on('requestTransaction', (tx, formatted) => {
+  txnInfoElement.data = tx
   if (sendTxnsCheckbox.checked) {
     const e = new Event('click')
     e.fromScript = true
@@ -161,7 +160,11 @@ socket.on('requestTransaction', data => {
   }
   else {
     transactionDiv.classList.remove('hidden')
-    txnInfoElement.innerText = JSON.stringify(data)
+    Object.entries(formatted).forEach(([key, value]) => {
+      fragment.appendChild(document.createElement('dt')).innerText = key
+      fragment.appendChild(document.createElement('dd')).innerText = value
+    })
+    txnInfoElement.replaceChildren(fragment)
   }
 })
 
@@ -173,6 +176,7 @@ acceptTxnButton.addEventListener('click', (e) => {
 rejectTxnButton.addEventListener('click', (e) => {
   delete txnInfoElement.data
   transactionDiv.classList.add('hidden')
+  document.querySelectorAll('input.txnRequester').forEach(b => b.disabled = false)
 })
 
 const emptyAddress = '0x0000000000000000000000000000000000000000'
