@@ -1,10 +1,66 @@
 const socket = io()
 
+// TODO: show next small blind value (in config)
+// TODO: make hide/show stuff more persistent: use the db?
+// TODO: add max value for raise/bet based on stack size
+// TODO: add slider for raise/bet value setting
+// TODO: make account/send details hideable and/or move to bottom of page?
+// TODO: buttons should be disabled based on whether a transaction is actually pending
+// TODO: format transaction preview better (e.g. format bignumbers)
+// TODO: hover over seat number to see address also for Game logs
+// TODO: add option to choose multiplier for formatting amounts (e.g. gwei)
+// TODO: add configurable rake and gas refund accounting?
+
 const fragment = document.createDocumentFragment()
 
 const errorMsg = document.getElementById('errorMsg')
 const errorMsgText = errorMsg.getElementsByTagName('span')[0]
 const clearErrorMsgButton = errorMsg.getElementsByTagName('input')[0]
+
+const buyInElement = document.getElementById('buyIn')
+const bondElement = document.getElementById('bond')
+const startsWithElement = document.getElementById('startsWith')
+const untilLeftElement = document.getElementById('untilLeft')
+const seatIndexElement = document.getElementById('seatIndex')
+const structureElement = document.getElementById('structure')
+const levelBlocksElement = document.getElementById('levelBlocks')
+const verifRoundsElement = document.getElementById('verifRounds')
+const prepBlocksElement = document.getElementById('prepBlocks')
+const shuffBlocksElement = document.getElementById('shuffBlocks')
+const verifBlocksElement = document.getElementById('verifBlocks')
+const dealBlocksElement = document.getElementById('dealBlocks')
+const actBlocksElement = document.getElementById('actBlocks')
+const configElements = [
+  buyInElement, bondElement, startsWithElement, untilLeftElement, seatIndexElement,
+  structureElement, levelBlocksElement, verifRoundsElement,
+  prepBlocksElement, shuffBlocksElement, verifBlocksElement, dealBlocksElement, actBlocksElement
+]
+const createDiv = document.getElementById('createDiv')
+const createGameButton = document.getElementById('createGame')
+const hideNewGameButton = document.getElementById('hideNewGame')
+
+const maxFeeElement = document.getElementById('maxFeePerGas')
+const prioFeeElement = document.getElementById('maxPriorityFeePerGas')
+const resetFeesButton = document.getElementById('resetFees')
+
+const addressElement = document.getElementById('address')
+const privkeyElement = document.getElementById('privkey')
+const newAccountButton = document.getElementById('newAccount')
+const hidePrivkeyButton = document.getElementById('hidePrivKey')
+
+const joinDiv = document.getElementById('joinDiv')
+const playDiv = document.getElementById('playDiv')
+
+const balanceElement = document.getElementById('balance')
+const sendAmountElement = document.getElementById('sendAmount')
+const sendToElement = document.getElementById('sendTo')
+const sendButton = document.getElementById('sendButton')
+
+const transactionDiv = document.getElementById('transaction')
+const txnInfoElement = document.getElementById('txnInfo')
+const acceptTxnButton = document.getElementById('acceptTxn')
+const rejectTxnButton = document.getElementById('rejectTxn')
+const sendTxnsCheckbox = document.getElementById('sendTxns')
 
 socket.on('errorMsg', msg => {
   errorMsg.classList.remove('hidden')
@@ -15,10 +71,6 @@ socket.on('errorMsg', msg => {
 clearErrorMsgButton.addEventListener('click', _ => {
   errorMsg.classList.add('hidden')
 })
-
-const maxFeeElement = document.getElementById('maxFeePerGas')
-const prioFeeElement = document.getElementById('maxPriorityFeePerGas')
-const resetFeesButton = document.getElementById('resetFees')
 
 resetFeesButton.addEventListener('click', (e) => {
   socket.emit('resetFees')
@@ -46,22 +98,18 @@ function customFees() {
 maxFeeElement.addEventListener('change', customFees)
 prioFeeElement.addEventListener('change', customFees)
 
-const addressElement = document.getElementById('address')
-const privkeyElement = document.getElementById('privkey')
-const newAccountButton = document.getElementById('newAccount')
-const hidePrivkeyButton = document.getElementById('hidePrivKey')
-
-const joinDiv = document.getElementById('joinDiv')
-const playDiv = document.getElementById('playDiv')
-
 hidePrivkeyButton.addEventListener('click', (e) => {
   if (privkeyElement.classList.contains('hidden')) {
     privkeyElement.classList.remove('hidden')
     hidePrivkeyButton.value = 'Hide'
+    if (!e.fromScript)
+      socket.emit('deletePreference', 'pkey', '')
   }
   else {
     privkeyElement.classList.add('hidden')
     hidePrivkeyButton.value = 'Show'
+    if (!e.fromScript)
+      socket.emit('addPreference', 'pkey', '')
   }
 })
 
@@ -83,11 +131,6 @@ socket.on('account', (address, privkey) => {
   playDiv.replaceChildren()
 })
 
-const balanceElement = document.getElementById('balance')
-const sendAmountElement = document.getElementById('sendAmount')
-const sendToElement = document.getElementById('sendTo')
-const sendButton = document.getElementById('sendButton')
-
 sendButton.addEventListener('click', (e) => {
   if (sendToElement.checkValidity() && sendAmountElement.checkValidity()) {
     socket.emit('send', sendToElement.value, sendAmountElement.value)
@@ -101,18 +144,20 @@ sendButton.addEventListener('click', (e) => {
 
 socket.on('balance', balance => {
   balanceElement.value = balance
+  sendButton.disabled = false
 })
 
-const transactionDiv = document.getElementById('transaction')
-const txnInfoElement = document.getElementById('txnInfo')
-const acceptTxnButton = document.getElementById('acceptTxn')
-const rejectTxnButton = document.getElementById('rejectTxn')
-const sendTxnsCheckbox = document.getElementById('sendTxns')
+sendTxnsCheckbox.addEventListener('change', e => {
+  if (!e.fromScript)
+    socket.emit(sendTxnsCheckbox.checked ? 'addPreference' : 'deletePreference', 'send', '')
+})
 
 socket.on('requestTransaction', data => {
   txnInfoElement.data = data
   if (sendTxnsCheckbox.checked) {
-    acceptTxnButton.dispatchEvent(new Event('click'))
+    const e = new Event('click')
+    e.fromScript = true
+    acceptTxnButton.dispatchEvent(e)
   }
   else {
     transactionDiv.classList.remove('hidden')
@@ -171,6 +216,75 @@ const pendingGames = new Map()
 const activeGames = new Map()
 const addressToSeat = new Map()
 const hideConfig = new Set()
+const hideLog = new Set()
+
+socket.on('preferences', (dict) => {
+  sendTxnsCheckbox.checked = 'send' in dict && dict.send.length
+
+  if ('create' in dict &&
+      ((dict.create.length && hideNewGameButton.value === 'Hide') ||
+       (!dict.create.length && hideNewGameButton.value === 'Show'))) {
+    const e = new Event('click')
+    e.fromScript = true
+    hideNewGameButton.dispatchEvent(e)
+  }
+
+  if ('pkey' in dict &&
+      ((dict.pkey.length && hidePrivkeyButton.value === 'Hide') ||
+       (!dict.pkey.length && hidePrivkeyButton.value === 'Show'))) {
+    const e = new Event('click')
+    e.fromScript = true
+    hidePrivkeyButton.dispatchEvent(e)
+  }
+
+  const newHideConfig = new Set(dict.config)
+  hideConfig.forEach(id => {
+    if (!newHideConfig.has(id)) {
+      hideConfig.delete(id)
+      const hideConfigButton = document.getElementById(`hideConfig${id}`)
+      if (hideConfigButton && hideConfigButton.value === 'Show Config') {
+        const e = new Event('click')
+        e.fromScript = true
+        hideConfigButton.dispatchEvent(e)
+      }
+    }
+  })
+  newHideConfig.forEach(id => {
+    if (!hideConfig.has(id)) {
+      hideConfig.add(id)
+      const hideConfigButton = document.getElementById(`hideConfig${id}`)
+      if (hideConfigButton && hideConfigButton.value === 'Hide Config') {
+        const e = new Event('click')
+        e.fromScript = true
+        hideConfigButton.dispatchEvent(e)
+      }
+    }
+  })
+
+  const newHideLog = new Set(dict.log)
+  hideLog.forEach(id => {
+    if (!newHideLog.has(id)) {
+      hideLog.delete(id)
+      const hideLogButton = document.getElementById(`hideLog${id}`)
+      if (hideLogButton && hideLogButton.value === 'Show Log') {
+        const e = new Event('click')
+        e.fromScript = true
+        hideLogButton.dispatchEvent(e)
+      }
+    }
+  })
+  newHideLog.forEach(id => {
+    if (!hideLog.has(id)) {
+      hideLog.add(id)
+      const hideLogButton = document.getElementById(`hideLog${id}`)
+      if (hideLogButton && hideLogButton.value === 'Hide Log') {
+        const e = new Event('click')
+        e.fromScript = true
+        hideLogButton.dispatchEvent(e)
+      }
+    }
+  })
+})
 
 socket.on('logCount', (id, count) => {
   if (logs.get(id).length < count)
@@ -230,22 +344,65 @@ function addGameConfig(li, config) {
     configDiv.appendChild(document.createElement('dt')).innerText = k
     configDiv.appendChild(document.createElement('dd')).innerText = v
   })
+  configDiv.classList.add('hidden')
   const hideConfigButton = li.appendChild(document.createElement('input'))
+  hideConfigButton.id = `hideConfig${config.id}`
   hideConfigButton.type = 'button'
-  hideConfigButton.value = 'Hide Config'
-  hideConfigButton.addEventListener('click', _ => {
+  hideConfigButton.value = 'Show Config'
+  hideConfigButton.classList.add('toggle')
+  hideConfigButton.addEventListener('click', e => {
     if (configDiv.classList.contains('hidden')) {
       configDiv.classList.remove('hidden')
       hideConfigButton.value = 'Hide Config'
       hideConfig.delete(config.id)
+      if (!e.fromScript)
+        socket.emit('deletePreference', 'config', config.id)
     }
     else {
       configDiv.classList.add('hidden')
       hideConfigButton.value = 'Show Config'
       hideConfig.add(config.id)
+      if (!e.fromScript)
+        socket.emit('addPreference', 'config', config.id)
     }
   })
-  if (hideConfig.has(config.id)) hideConfigButton.dispatchEvent(new Event('click'))
+  if (!hideConfig.has(config.id)) {
+    const e = new Event('click')
+    e.fromScript = true
+    hideConfigButton.dispatchEvent(e)
+  }
+}
+
+function addLogsUl(li, tableId) {
+  const logsUl = li.appendChild(document.createElement('ul'))
+  logsUl.id = `logs${tableId}`
+  logsUl.classList.add('logs', 'hidden')
+  const hideLogButton = li.appendChild(document.createElement('input'))
+  hideLogButton.id = `hideLog${tableId}`
+  hideLogButton.type = 'button'
+  hideLogButton.value = 'Show Log'
+  hideLogButton.classList.add('toggle')
+  hideLogButton.addEventListener('click', e => {
+    if (logsUl.classList.contains('hidden')) {
+      logsUl.classList.remove('hidden')
+      hideLogButton.value = 'Hide Log'
+      hideLog.delete(tableId)
+      if (!e.fromScript)
+        socket.emit('deletePreference', 'log', tableId)
+    }
+    else {
+      logsUl.classList.add('hidden')
+      hideLogButton.value = 'Show Log'
+      hideLog.add(tableId)
+      if (!e.fromScript)
+        socket.emit('addPreference', 'log', tableId)
+    }
+  })
+  if (!hideLog.has(tableId)) {
+    const e = new Event('click')
+    e.fromScript = true
+    hideLogButton.dispatchEvent(e)
+  }
 }
 
 socket.on('pendingGames', (configs, seats) => {
@@ -259,9 +416,7 @@ socket.on('pendingGames', (configs, seats) => {
       const li = document.createElement('li')
       pendingGames.set(config.id, li)
       addGameConfig(li, config)
-      const logsUl = li.appendChild(document.createElement('ul'))
-      logsUl.id = `logs${config.id}`
-      logsUl.classList.add('logs')
+      addLogsUl(li, config.id)
       const ol = li.appendChild(document.createElement('ol'))
       ol.start = 0
     }
@@ -300,9 +455,7 @@ socket.on('activeGames', (configs, data) => {
       const li = document.createElement('li')
       activeGames.set(config.id, li)
       addGameConfig(li, config)
-      const logsUl = li.appendChild(document.createElement('ul'))
-      logsUl.id = `logs${config.id}`
-      logsUl.classList.add('logs')
+      addLogsUl(li, config.id)
       const ul = li.appendChild(document.createElement('ul'))
       ul.classList.add('game')
       const div = li.appendChild(document.createElement('div'))
@@ -494,28 +647,6 @@ socket.on('activeGames', (configs, data) => {
   playDiv.replaceChildren(...activeGames.values())
 })
 
-const buyInElement = document.getElementById('buyIn')
-const bondElement = document.getElementById('bond')
-const startsWithElement = document.getElementById('startsWith')
-const untilLeftElement = document.getElementById('untilLeft')
-const seatIndexElement = document.getElementById('seatIndex')
-const structureElement = document.getElementById('structure')
-const levelBlocksElement = document.getElementById('levelBlocks')
-const verifRoundsElement = document.getElementById('verifRounds')
-const prepBlocksElement = document.getElementById('prepBlocks')
-const shuffBlocksElement = document.getElementById('shuffBlocks')
-const verifBlocksElement = document.getElementById('verifBlocks')
-const dealBlocksElement = document.getElementById('dealBlocks')
-const actBlocksElement = document.getElementById('actBlocks')
-const configElements = [
-  buyInElement, bondElement, startsWithElement, untilLeftElement, seatIndexElement,
-  structureElement, levelBlocksElement, verifRoundsElement,
-  prepBlocksElement, shuffBlocksElement, verifBlocksElement, dealBlocksElement, actBlocksElement
-]
-const createDiv = document.getElementById('createDiv')
-const createGameButton = document.getElementById('createGame')
-const hideNewGameButton = document.getElementById('hideNewGame')
-
 createGameButton.classList.add('txnRequester')
 
 createGameButton.addEventListener('click', (e) => {
@@ -530,14 +661,18 @@ createGameButton.addEventListener('click', (e) => {
   }
 })
 
-hideNewGameButton.addEventListener('click', _ => {
+hideNewGameButton.addEventListener('click', e => {
   if (createDiv.classList.contains('hidden')) {
     createDiv.classList.remove('hidden')
     hideNewGameButton.value = 'Hide'
+    if (!e.fromScript)
+      socket.emit('deletePreference', 'create', '')
   }
   else {
     createDiv.classList.add('hidden')
     hideNewGameButton.value = 'Show'
+    if (!e.fromScript)
+      socket.emit('addPreference', 'create', '')
   }
 })
 

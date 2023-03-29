@@ -305,12 +305,20 @@ async function refreshNetworkInfo(socket) {
   }
 }
 
+async function refreshPreferences(socket) {
+  const key = `/${socket.account.address}/preferences`
+  if (await db.exists(key)) {
+    socket.emit('preferences', await db.getData(key))
+  }
+}
+
 async function changeAccount(socket) {
   socket.emit('account', socket.account.address, socket.account.privateKey)
   await db.push(`/${socket.account.address}/privateKey`, socket.account.privateKey)
   await refreshBalance(socket)
   await refreshPendingGames(socket)
   await refreshActiveGames(socket)
+  await refreshPreferences(socket)
 }
 
 function simpleTxn(socket, contract, func) {
@@ -397,6 +405,26 @@ io.on('connection', async socket => {
     }
     catch (e) {
       socket.emit('errorMsg', e.toString())
+    }
+  })
+
+  socket.on('addPreference', async (key, value) => {
+    if (socket.account) {
+      const dbkey = `/${socket.account.address}/preferences/${key}`
+      const a = (await db.exists(dbkey)) ? (await db.getData(dbkey)) : []
+      const s = new Set(a)
+      s.add(value)
+      await db.push(dbkey, Array.from(s.keys()))
+    }
+  })
+
+  socket.on('deletePreference', async (key, value) => {
+    if (socket.account) {
+      const dbkey = `/${socket.account.address}/preferences/${key}`
+      const a = (await db.exists(dbkey)) ? (await db.getData(dbkey)) : []
+      const s = new Set(a)
+      s.delete(value)
+      await db.push(dbkey, Array.from(s.keys()))
     }
   })
 
