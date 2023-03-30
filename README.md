@@ -1,22 +1,26 @@
 # Hodlem: Texas Hold'em Sit-n-Go Poker Tournaments for Ethereum
+The game is fully decentralised.
+Players come together to play a tournament entirely via submitting transactions on chain.
 
-The game is fully decentralised. Players come together to play a tournament entirely via submitting transactions on chain.
+## Install and run tests
+1. Clone this repository: `git clone https://github.com/xrchz/hodlem`
+2. Get dependencies:
+    - Node.js: https://nodejs.org/
+    - Foundry: https://getfoundry.sh/
+    - Vyper: `pip install vyper`
+    - Ape: `pip install eth-ape`
+3. Install Ape plugins: `ape plugins install`
+4. `ape test`
 
-## Quick start on dev net
+## Run on a local dev net
+Follow the installations instructions above first.
 
-Since the contracts are not yet deployed anywhere, you can test on a local devnet.
-For example, using [Brownie](https://eth-brownie.readthedocs.io/en/stable/index.html):
+1. `ape run deploy -I` to start a local dev net with the contracts deployed
+2. `cd interface` and `npm ci` - it should install the required node modules automatically
+3. (still in `interface`) `node run` to start the interface, listening on `localhost:8080` by default
+4. Visit `http://localhost:8080` to see the interface and take it from there!
 
-1. Clone this repo `git clone https://github.com/xrchz/hodlem`, `cd hodlem`
-2. Run `brownie run deploy.py -I` to run the deployment script. You may have to pass an appropriate `--network` argument to choose your devnet. Leave this running to provide the RPC for the interface.
-3. `cd interface` and `npm install`. Add `RPC=http://127.0.0.1:8545`, or whatever as appropriate, to point to the RPC provided by brownie.
-4. Run `node run` to run the interface
-5. Navigate to `http://localhost:8080`
-
-## Interface
-
-The interface is designed to be served locally using Node.js. Run the server, providing it your RPC node, then navigate to the served page in your browser.
-
-## Contracts
-
-The main contract is `contracts/Game.vy`.
+## Run on a public network
+The contracts have not yet been deployed. When they are, it will be the same as
+above (from step 2) to run the interface, providing the deployment address and
+an RPC node as environment variables (or in the `.env` file).

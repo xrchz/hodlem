@@ -1,9 +1,9 @@
 const socket = io()
 
+// TODO: prevent rogue game contract in createTable
 // TODO: show next small blind value (in config)
 // TODO: add max value for raise/bet based on stack size
 // TODO: add slider for raise/bet value setting
-// TODO: make account/send details hideable and/or move to bottom of page?
 // TODO: input validation for send funds form
 // TODO: buttons should be disabled based on whether a transaction is actually pending
 // TODO: hover over seat number to see address also for Game logs

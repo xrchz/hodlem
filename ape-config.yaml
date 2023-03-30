@@ -2,7 +2,7 @@ plugins:
   - name: vyper
   - name: foundry
 ethereum:
-  default_network: mainnet-fork
+  default_network: local
   local:
     default_provider: foundry
 foundry:
