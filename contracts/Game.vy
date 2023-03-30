@@ -1,11 +1,6 @@
 # @version ^0.3.7
 # no-limit hold'em sit-n-go single-table tournaments
 
-# TODO: finish frontend
-# TODO: add pause?
-# TODO: add rake (rewards tabs for progress txns)?
-# TODO: add penalties (instead of full abort on failure)?
-
 # copied from Deck.vy because https://github.com/vyperlang/vyper/issues/2670
 MAX_PLAYERS: constant(uint256) = 127 # to distinguish from MAX_SIZE when inlining
 

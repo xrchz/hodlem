@@ -15,7 +15,7 @@ Players come together to play a tournament entirely via submitting transactions 
 ## Run on a local dev net
 Follow the installations instructions above first.
 
-1. `ape run deploy -I` to start a local dev net with the contracts deployed
+1. `ape run -I deploy` to start a local dev net with the contracts deployed
 2. `cd interface` and `npm ci` - it should install the required node modules automatically
 3. (still in `interface`) `node run` to start the interface, listening on `localhost:8080` by default
 4. Visit `http://localhost:8080` to see the interface and take it from there!

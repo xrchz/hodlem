@@ -1,13 +1,19 @@
 const socket = io()
 
-// TODO: show next small blind value (in config)
-// TODO: add max value for raise/bet based on stack size
 // TODO: add slider for raise/bet value setting
+// TODO: add preset values (1/2, pot, max) for raise/bet
 // TODO: input validation for send funds form
 // TODO: buttons should be disabled based on whether a transaction is actually pending
+// TODO: show next small blind value (in config)
 // TODO: hover over seat number to see address also for Game logs
 // TODO: add option to choose multiplier for formatting amounts (e.g. gwei)
+// TODO: add antes to structure
+// TODO: make preset bet size buttons customisable
+// TODO: test corner cases of dealers and blinds when players are eliminated
+// TODO: pack structs
 // TODO: add configurable rake and gas refund accounting?
+// TODO: add penalties (instead of full abort on failure)?
+// TODO: add pause?
 
 const fragment = document.createDocumentFragment()
 
