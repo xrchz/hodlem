@@ -59,6 +59,8 @@ interface GameManager:
   def afterShuffle(_tableId: uint256): nonpayable
   def afterDeal(_tableId: uint256, _phase: uint256): nonpayable
 
+gameAddress: address
+
 struct Table:
   config:      Config
   seats:       address[9]           # playerIds in seats as at the start of the game
@@ -86,6 +88,12 @@ prevLiveTable: public(HashMap[address, HashMap[uint256, uint256]])
 def __init__(_deckAddr: address):
   D = DeckManager(_deckAddr)
   self.nextTableId = 1
+  self.gameAddress = msg.sender
+
+@external
+def setGameAddress(_gameAddr: address):
+  self.gameAuth()
+  self.gameAddress = _gameAddr
 
 @external
 @view
@@ -143,8 +151,8 @@ def validatePhase(_tableId: uint256, _phase: uint256):
 
 @internal
 @view
-def gameAuth(_tableId: uint256):
-  assert self.tables[_tableId].game.address == msg.sender, "unauthorised"
+def gameAuth():
+  assert self.gameAddress == msg.sender, "unauthorised"
 
 @internal
 @view
@@ -153,11 +161,11 @@ def checkAuth(_tableId: uint256, _seatIndex: uint256):
 
 @external
 @payable
-def createTable(_seatIndex: uint256, _config: Config, _gameAddr: address) -> uint256:
-  GameManager(_gameAddr).checkConfig(_config, _seatIndex)
+def createTable(_seatIndex: uint256, _config: Config) -> uint256:
+  GameManager(self.gameAddress).checkConfig(_config, _seatIndex)
   assert msg.value == unsafe_add(_config.bond, _config.buyIn), "incorrect bond + buyIn"
   tableId: uint256 = self.nextTableId
-  self.tables[tableId].game = GameManager(_gameAddr)
+  self.tables[tableId].game = GameManager(self.gameAddress)
   self.tables[tableId].deckId = D.newDeck(_config.startsWith)
   self.tables[tableId].phase = Phase_JOIN
   self.tables[tableId].config = _config
@@ -210,14 +218,14 @@ def leaveTable(_tableId: uint256, _seatIndex: uint256):
 
 @external
 def refundPlayer(_tableId: uint256, _seatIndex: uint256, _stack: uint256):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   player: address = self.tables[_tableId].seats[_seatIndex]
   self.forceSend(player, unsafe_add(self.tables[_tableId].config.bond, _stack))
   self.playerLeaveLive(_tableId, player)
 
 @external
 def deleteTable(_tableId: uint256):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   self.tables[_tableId] = empty(Table)
   log EndGame(_tableId)
 
@@ -424,7 +432,7 @@ def autoVerif(_tableId: uint256):
 
 @external
 def reshuffle(_tableId: uint256):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   D.resetShuffle(self.tables[_tableId].deckId)
   self.tables[_tableId].shuffled = 0
   self.tables[_tableId].requirement = empty(uint256[26])
@@ -483,7 +491,7 @@ def decryptCards(_tableId: uint256, _seatIndex: uint256, _data: DynArray[uint256
 
 @external
 def gameRevealCards(_tableId: uint256, _seatIndex: uint256, _data: uint256[7][2]):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   deckId: uint256 = self.tables[_tableId].deckId
   sender: address = self.tables[_tableId].seats[_seatIndex]
   for i in range(2):
@@ -534,14 +542,14 @@ def endDeal(_tableId: uint256):
 
 @external
 def startDeal(_tableId: uint256, _nextPhase: uint256):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   self.tables[_tableId].phase = Phase_DEAL
   self.tables[_tableId].nextPhase = _nextPhase
   self.tables[_tableId].commitBlock = block.number
 
 @external
 def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256:
-  self.gameAuth(_tableId)
+  self.gameAuth()
   deckIndex: uint256 = self.tables[_tableId].deckIndex
   self.tables[_tableId].drawIndex[deckIndex] = _seatIndex
   self.tables[_tableId].requirement[deckIndex] = Req_HAND
@@ -551,19 +559,19 @@ def dealTo(_tableId: uint256, _seatIndex: uint256) -> uint256:
 
 @external
 def showCard(_tableId: uint256, _cardIndex: uint256):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   self.tables[_tableId].requirement[_cardIndex] = Req_SHOW
 
 @external
 def burnCard(_tableId: uint256):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   self.tables[_tableId].deckIndex = unsafe_add(self.tables[_tableId].deckIndex, 1)
 
 # showdown
 
 @external
 def startShow(_tableId: uint256):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   self.tables[_tableId].phase = Phase_SHOW
 
 event Eliminate:
@@ -572,7 +580,7 @@ event Eliminate:
 
 @external
 def eliminate(_tableId: uint256, _seatIndex: uint256):
-  self.gameAuth(_tableId)
+  self.gameAuth()
   self.tables[_tableId].present &= ~shift(1, convert(_seatIndex, int128)) # TODO: https://github.com/vyperlang/vyper/issues/3309
   log Eliminate(_tableId, _seatIndex)
 

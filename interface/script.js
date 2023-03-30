@@ -1,6 +1,5 @@
 const socket = io()
 
-// TODO: prevent rogue game contract in createTable
 // TODO: show next small blind value (in config)
 // TODO: add max value for raise/bet based on stack size
 // TODO: add slider for raise/bet value setting

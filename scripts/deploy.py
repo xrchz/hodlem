@@ -6,6 +6,7 @@ def deploy():
     deck = project.Deck.deploy(sender=acc[0])
     room = project.Room.deploy(deck.address, sender=acc[0])
     game = project.Game.deploy(room.address, sender=acc[0])
+    room.setGameAddress(game.address, sender=acc[0])
     return deck, room, game
 
 def main():

@@ -444,7 +444,7 @@ io.on('connection', async socket => {
       requestTransaction(socket, 'createTable',
         await room.connect(socket.account).populateTransaction
         .createTable(
-          seatIndex, config, game.address, {
+          seatIndex, config, {
             value: config.buyIn.add(config.bond),
             maxFeePerGas: socket.feeData.maxFeePerGas,
             maxPriorityFeePerGas: socket.feeData.maxPriorityFeePerGas

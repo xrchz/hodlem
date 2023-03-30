@@ -17,7 +17,9 @@ def room(project, accounts, deck):
 
 @pytest.fixture(scope="session")
 def game(project, accounts, room):
-    return project.Game.deploy(room.address, sender=accounts[0])
+    game = project.Game.deploy(room.address, sender=accounts[0])
+    room.setGameAddress(game.address, sender=accounts[0])
+    return game
 
 def test_new_deck_ids_distinct(accounts, deck):
     tx1 = deck.newDeck(13, sender=accounts[0])
@@ -35,19 +37,19 @@ def test_new_deck_invalid_players(accounts, deck):
 def test_create_invalid_seatIndex(accounts, room, game):
     with reverts("invalid seatIndex"):
         room.createTable(
-                12, (1, 2, 3, 2, [1,2,3], 2, 2, 2, 2, 2, 2, 2), game.address,
+                12, (1, 2, 3, 2, [1,2,3], 2, 2, 2, 2, 2, 2, 2),
                 sender=accounts[0])
 
 def test_create_wrong_value(accounts, room, game):
     with reverts("incorrect bond + buyIn"):
         room.createTable(
-                0, (1, 2, 3, 2, [1,2,3], 2, 2, 2, 2, 2, 2, 2), game.address,
+                0, (1, 2, 3, 2, [1,2,3], 2, 2, 2, 2, 2, 2, 2),
                 sender=accounts[0])
 
 def test_join_leave_join(accounts, room, game):
     seatIndex = 1
     tx = room.createTable(
-            seatIndex, (100, 200, 3, 2, [1,2,3], 2, 2, 2, 2, 2, 2, 2), game.address,
+            seatIndex, (100, 200, 3, 2, [1,2,3], 2, 2, 2, 2, 2, 2, 2),
             sender=accounts[0], value="300 wei")
     tableId = tx.return_value
     room_prev_balance = room.balance
@@ -74,8 +76,7 @@ def test_too_many_players(accounts, room, game):
             dealBlocks=10,
             actBlocks=15)
     with reverts("invalid startsWith"):
-        room.createTable(0, config, game.address,
-                         sender=accounts[1], value="3000 wei")
+        room.createTable(0, config, sender=accounts[1], value="3000 wei")
 
 def test_max_players(accounts, room, game):
     config = dict(
@@ -91,8 +92,7 @@ def test_max_players(accounts, room, game):
             verifBlocks=15,
             dealBlocks=10,
             actBlocks=15)
-    tx = room.createTable(0, config, game.address,
-                          sender=accounts[1], value="3000 wei")
+    tx = room.createTable(0, config, sender=accounts[1], value="3000 wei")
     assert len(tx.events) == 1
     assert tx.events[0].event_name == "JoinTable"
 
@@ -111,8 +111,7 @@ def test_one_too_many_until_left(accounts, room, game):
             dealBlocks=10,
             actBlocks=15)
     with reverts("invalid untilLeft"):
-        room.createTable(0, config, game.address,
-                         sender=accounts[1], value="3000 wei")
+        room.createTable(0, config, sender=accounts[1], value="3000 wei")
 
 def test_one_level(accounts, room, game):
     config = dict(
@@ -128,15 +127,14 @@ def test_one_level(accounts, room, game):
             verifBlocks=15,
             dealBlocks=10,
             actBlocks=15)
-    tx = room.createTable(0, config, game.address,
-                          sender=accounts[0], value="3000 wei")
+    tx = room.createTable(0, config, sender=accounts[0], value="3000 wei")
     assert len(tx.events) == 1
     assert tx.events[0].event_name == "JoinTable"
 
 def test_submit_prep_timeout(networks, accounts, chain, room, game):
     prepBlocks = 2
     tx = room.createTable(
-            1, (100, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2), game.address,
+            1, (100, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2),
             sender=accounts[0], value="300 wei")
     tableId = tx.return_value
     tx = room.joinTable(tableId, 0, sender=accounts[1], value="300 wei")
@@ -158,7 +156,7 @@ def test_submit_prep_timeout(networks, accounts, chain, room, game):
 def test_submit_prep_timeout_self(accounts, chain, room, game):
     prepBlocks = 2
     tx = room.createTable(
-            1, (100, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2), game.address,
+            1, (100, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2),
             sender=accounts[0], value="300 wei")
     tableId = tx.return_value
     tx = room.joinTable(tableId, 0, sender=accounts[1], value="300 wei")
@@ -175,7 +173,7 @@ def test_submit_prep_timeout_self(accounts, chain, room, game):
 def test_verify_prep_timeout(accounts, chain, room, game):
     prepBlocks = 1
     tx = room.createTable(
-            0, (300, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2), game.address,
+            0, (300, 200, 2, 1, [1,2,3], 2, 2, prepBlocks, 2, 2, 2, 2),
             sender=accounts[0], value="500 wei")
     tableId = tx.return_value
     tx = room.joinTable(tableId, 1, sender=accounts[1], value="500 wei")
@@ -245,9 +243,7 @@ def two_players_prepped(networks, accounts, deck, room, game, deckArgs):
             dealBlocks=10,
             actBlocks=15)
     value = f"{config['bond'] + config['buyIn']} wei"
-    tx = room.createTable(
-            0, config, game.address,
-            sender=accounts[0], value=value)
+    tx = room.createTable(0, config, sender=accounts[0], value=value)
     tableId = tx.return_value
     tx = room.joinTable(tableId, 1, sender=accounts[1], value=value)
 
@@ -274,7 +270,7 @@ def three_players_prepped(networks, accounts, deck, room, game, deckArgs):
             dealBlocks=15,
             actBlocks=10)
     value = f"{config['bond'] + config['buyIn']} wei"
-    tx = room.createTable(0, config, game.address, sender=accounts[0], value=value)
+    tx = room.createTable(0, config, sender=accounts[0], value=value)
     tableId = tx.return_value
     tx = room.joinTable(tableId, 2, sender=accounts[2], value=value)
     tx = room.joinTable(tableId, 1, sender=accounts[1], value=value)
@@ -1119,7 +1115,7 @@ def test_all_in_blinds_eliminate(accounts, deckArgs, room, game):
             dealBlocks=15,
             actBlocks=10)
     value = f"{config['bond'] + config['buyIn']} wei"
-    tx = room.createTable(0, config, game.address, sender=accounts[0], value=value)
+    tx = room.createTable(0, config, sender=accounts[0], value=value)
     tableId = tx.return_value
     tx = room.joinTable(tableId, 2, sender=accounts[2], value=value)
     tx = room.joinTable(tableId, 1, sender=accounts[1], value=value)
