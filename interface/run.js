@@ -551,7 +551,6 @@ io.on('connection', async socket => {
       const room_a = room.connect(socket.account)
       try { await room_a.callStatic.decryptCards(...args) }
       catch (e) {
-        console.log(`failed decrypt with ${e.toString()}`)
         args[3] = false
       }
       requestTransaction(socket, 'decryptCards',
@@ -574,7 +573,6 @@ io.on('connection', async socket => {
       const room_a = room.connect(socket.account)
       try { await room_a.callStatic.revealCards(...args) }
       catch (e) {
-        console.log(`failed reveal with ${e.toString()}`)
         args[3] = false
       }
       requestTransaction(socket, 'revealCards',
