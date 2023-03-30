@@ -459,7 +459,8 @@ def autoDecrypt(_tableId: uint256, _cardIndex: uint256):
       break
     if self.tables[_tableId].present & shift(1, convert(seatIndex, int128)) == 0: # TODO: https://github.com/vyperlang/vyper/issues/3309
       card: uint256[2] = D.lastDecrypt(deckId, _cardIndex)
-      D.decryptCard(deckId, seatIndex, _cardIndex, card, D.emptyProof(card))
+      D.decryptCard(deckId, seatIndex, _cardIndex, card,
+                    D.emptyProof(D.shuffleBase(deckId, seatIndex), card))
       seatIndex = unsafe_add(seatIndex, 1)
     else:
       break

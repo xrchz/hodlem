@@ -256,11 +256,11 @@ def hash(g: uint256[2], h: uint256[2],
 
 @external
 @pure
-def emptyProof(card: uint256[2]) -> Proof:
+def emptyProof(base: uint256[2], card: uint256[2]) -> Proof:
   return Proof({
     gs: empty(uint256[2]),
     hs: empty(uint256[2]),
-    scx: self.hash(card, card, card, card, empty(uint256[2]), empty(uint256[2]))})
+    scx: self.hash(base, card, base, card, empty(uint256[2]), empty(uint256[2]))})
 
 @internal
 @pure
