@@ -315,6 +315,8 @@ function requestTransaction(socket, method, tx) {
   formatted.maxFeePerGas += ' gwei'
   formatted.maxPriorityFeePerGas = ethers.utils.formatUnits(formatted.maxPriorityFeePerGas, 'gwei')
   formatted.maxPriorityFeePerGas += ' gwei'
+  if ('gasLimit' in formatted)
+    formatted.gasLimit = formatted.gasLimit.toString()
   formatted.method = method
   socket.emit('requestTransaction', tx, formatted)
 }
