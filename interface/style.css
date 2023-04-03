@@ -57,6 +57,14 @@ input[type=button].toggle {
   width: 18em;
 }
 
+.amount:invalid, .amountWei:invalid + .amount {
+  border: solid 1px Red;
+}
+
+.amountWei {
+  display: none;
+}
+
 dl + input[type="button"], ul.logs + input[type="button"] {
   margin: auto;
   display: block;
@@ -191,12 +199,31 @@ span.bet::before {
   justify-content: space-between;
 }
 
+div.bet {
+  display: flex;
+  flex-direction: row;
+}
+
+div.amount {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+div.amount > input.amountWei {
+  position: absolute;
+}
+
 .amountGwei {
   width: 8em;
 }
 
 input[type=number].blocks {
   width: 6em;
+}
+
+input[type=number].amount {
+  width: 18em;
 }
 
 input[type=number] {

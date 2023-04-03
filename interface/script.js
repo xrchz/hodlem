@@ -1,12 +1,13 @@
 const socket = io()
+import { ethers } from "./node_modules/ethers/dist/ethers.esm.min.js"
 
-// TODO: add slider for raise/bet value setting
 // TODO: add preset values (1/2, pot, max) for raise/bet
+// TODO: add option to choose multiplier for formatting amounts (e.g. gwei)
 // TODO: input validation for send funds form
 // TODO: buttons should be disabled based on whether a transaction is actually pending
 // TODO: show next small blind value (in config)
+// TODO: show/hide account balance even if wallet is hidden
 // TODO: hover over seat number to see address also for Game logs
-// TODO: add option to choose multiplier for formatting amounts (e.g. gwei)
 // TODO: add antes to structure
 // TODO: make preset bet size buttons customisable
 // TODO: test corner cases of dealers and blinds when players are eliminated
@@ -14,6 +15,7 @@ const socket = io()
 // TODO: add configurable rake and gas refund accounting?
 // TODO: add penalties (instead of full abort on failure)?
 // TODO: add pause?
+// TODO: use ethers for more formatting client-side?
 
 const fragment = document.createDocumentFragment()
 
@@ -615,14 +617,72 @@ socket.on('activeGames', (configs, data) => {
         call.type = 'button'
         call.value = di.callBy === '0.0' ? 'Check' : `Call ${di.bet[di.betIndex]} with ${di.callBy}`
         const betDiv = div.appendChild(document.createElement('div'))
+        betDiv.classList.add('bet')
         const bet = betDiv.appendChild(document.createElement('input'))
         bet.type = 'button'
-        bet.value = di.callBy === '0.0' ? 'Bet' : 'Raise with '
-        const amount = betDiv.appendChild(document.createElement('input'))
-        amount.inputmode = 'decimal'
-        amount.pattern = "^([1-9]\\d*)|(\\d*\\.\\d+)$"
-        amount.value = di.minRaiseBy
-        amount.classList.add('amount')
+        bet.value = di.callBy === '0.0' ? 'Bet ' : 'Raise with '
+        const amountDiv = betDiv.appendChild(document.createElement('div'))
+        amountDiv.classList.add('amount')
+        const amountWei = amountDiv.appendChild(document.createElement('input'))
+        const amountEther = amountDiv.appendChild(document.createElement('input'))
+        const slider = amountDiv.appendChild(document.createElement('input'))
+        const minRaiseByWei = ethers.utils.parseEther(di.minRaiseBy).toString()
+        amountWei.type = 'number'
+        amountWei.inputmode = 'numeric'
+        amountWei.pattern = "^([1-9]\\d*)"
+        amountWei.value = minRaiseByWei
+        amountWei.min = minRaiseByWei
+        amountWei.max = ethers.utils.parseEther(di.stack[di.seatIndex]).toString()
+        amountWei.step = 1
+        amountWei.classList.add('amountWei')
+        amountEther.type = 'text'
+        amountEther.inputmode = 'decimal'
+        amountEther.pattern = "^([1-9]\\d*)|(\\d*\\.\\d+)$"
+        amountEther.value = di.minRaiseBy
+        amountEther.classList.add('amount')
+        slider.type = 'range'
+        slider.classList.add('amount')
+        slider.min = amountWei.min
+        slider.max = amountWei.max
+        slider.step = amountWei.step
+        slider.addEventListener('change', e => {
+          if (!e.fromAmount) {
+            amountWei.value = BigInt(slider.valueAsNumber).toString()
+            const e2 = new Event('change')
+            e2.fromSlider = true
+            amountWei.dispatchEvent(e2)
+          }
+        })
+        amountWei.addEventListener('change', e => {
+          if (amountWei.checkValidity()) {
+            const e2 = new Event('change')
+            e2.fromAmount = true
+            if (!e.fromSlider) {
+              slider.value = amountWei.value
+              slider.dispatchEvent(e2)
+            }
+            if (!e.fromAmountEther) {
+              amountEther.value = ethers.utils.formatUnits(amountWei.value, 'ether')
+              amountEther.dispatchEvent(e2)
+            }
+          }
+          else {
+            amountWei.reportValidity()
+          }
+        })
+        amountEther.addEventListener('change', e => {
+          if (!e.fromAmount) {
+            if (amountEther.checkValidity()) {
+              amountWei.value = ethers.utils.parseEther(amountEther.value).toString()
+              const e2 = new Event('change')
+              e2.fromAmountEther = true
+              amountWei.dispatchEvent(e2)
+            }
+            else {
+              amountEther.reportValidity()
+            }
+          }
+        })
         const buttons = [fold, call, bet]
         buttons.forEach(b => b.classList.add('txnRequester'))
         fold.addEventListener('click', _ => {
@@ -634,12 +694,12 @@ socket.on('activeGames', (configs, data) => {
           buttons.forEach(b => b.disabled = true)
         })
         bet.addEventListener('click', _ => {
-          if (amount.checkValidity()) {
-            socket.emit('raise', config.id, di.seatIndex, amount.value, di.bet[di.seatIndex])
+          if (amountWei.checkValidity()) {
+            socket.emit('raise', config.id, di.seatIndex, amountWei.value, di.bet[di.seatIndex])
             buttons.forEach(b => b.disabled = true)
           }
           else
-            amount.reportValidity()
+            amountWei.reportValidity()
         })
       }
     }
