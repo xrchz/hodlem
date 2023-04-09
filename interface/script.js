@@ -1,7 +1,6 @@
 const socket = io()
 import { ethers } from "./node_modules/ethers/dist/ethers.esm.min.js"
 
-// TODO: add preset values (1/2, pot, max) for raise/bet
 // TODO: add option to choose multiplier for formatting amounts (e.g. gwei)
 // TODO: input validation for send funds form
 // TODO: buttons should be disabled based on whether a transaction is actually pending
@@ -11,7 +10,13 @@ import { ethers } from "./node_modules/ethers/dist/ethers.esm.min.js"
 // TODO: add antes to structure
 // TODO: make preset bet size buttons customisable
 // TODO: test corner cases of dealers and blinds when players are eliminated
+// TODO: test multiple side pots
+// TODO: test split side pot
+// TODO: test act timeout during showdown
+// TODO: test act timeout during betting with all-in players
+// TODO: test shuffle timeout with an eliminated player
 // TODO: pack structs
+// TODO: profile and optimise gas usage
 // TODO: add configurable rake and gas refund accounting?
 // TODO: add penalties (instead of full abort on failure)?
 // TODO: add pause?
@@ -645,6 +650,41 @@ socket.on('activeGames', (configs, data) => {
         slider.min = amountWei.min
         slider.max = amountWei.max
         slider.step = amountWei.step
+        const ticks = new Map()
+        function addRaiseButton(value, name) {
+          if (ticks.has(value)) return
+          if (BigInt(value) < BigInt(amountWei.min) || BigInt(value) > BigInt(amountWei.max)) return
+          const button = document.createElement('input')
+          ticks.set(value, button)
+          button.type = 'button'
+          button.value = name
+          button.classList.add('amount')
+          button.classList.add('toggle')
+          button.addEventListener('click', _ => {
+            amountWei.value = value
+            amountWei.dispatchEvent(new Event('change'))
+          })
+        }
+        addRaiseButton(amountWei.min, 'min')
+        addRaiseButton(amountWei.max, 'all-in')
+        if (di.board.length) {
+          const p = BigInt(ethers.utils.parseEther(di.lastPotWithBets).toString())
+          addRaiseButton(p.toString(), 'pot')
+          addRaiseButton((p / 2n).toString(), '½-pot')
+          addRaiseButton((p * 2n / 3n).toString(), '⅔-pot')
+          addRaiseButton((p * 3n / 4n).toString(), '¾-pot')
+        }
+        else {
+          const b = BigInt(minRaiseByWei) // TODO: make the values correct
+          addRaiseButton((2n * b).toString(), '1BB')
+          addRaiseButton((4n * b).toString(), '2BB')
+          addRaiseButton((6n * b).toString(), '3BB')
+        }
+        const betButtons = amountDiv.appendChild(document.createElement('div'))
+        betButtons.classList.add('betButtons')
+        const ticksKeys = Array.from(ticks.keys())
+        ticksKeys.sort((a, b) => BigInt(a) <= BigInt(b) ? -1 : 1)
+        for (const k of ticksKeys) betButtons.appendChild(ticks.get(k))
         slider.addEventListener('change', e => {
           if (!e.fromAmount) {
             amountWei.value = BigInt(slider.valueAsNumber).toString()

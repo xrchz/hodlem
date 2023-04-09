@@ -53,7 +53,7 @@ input[type=button].toggle {
   width: 54em;
 }
 
-.amount {
+input[type=text].amount, input[type=number].amount {
   width: 18em;
 }
 
@@ -63,6 +63,20 @@ input[type=button].toggle {
 
 .amountWei {
   display: none;
+}
+
+input[type=range] {
+  padding: 0;
+}
+
+.betButtons {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.betButtons > input[type=button].toggle {
+  font-size: x-small;
 }
 
 dl + input[type="button"], ul.logs + input[type="button"] {
