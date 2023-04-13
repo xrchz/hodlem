@@ -9,7 +9,7 @@ Players come together to play a tournament entirely via submitting transactions 
     - Foundry: https://getfoundry.sh/
     - Vyper: `pip install vyper`
     - Ape: `pip install eth-ape`
-3. Install Ape plugins: `ape plugins install`
+3. Install Ape plugins: `ape plugins install .`
 4. `ape test`
 
 ## Run on a local dev net
