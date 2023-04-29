@@ -610,7 +610,7 @@ io.on('connection', async socket => {
 
   socket.on('raise', async (tableId, seatIndex, raiseBy, bet) => {
     try {
-      const raiseTo = ethers.utils.parseEther(bet).add(ethers.utils.parseEther(raiseBy))
+      const raiseTo = ethers.utils.parseEther(bet).add(raiseBy)
       requestTransaction(socket, 'raiseBet',
         await game.connect(socket.account).populateTransaction
         .raiseBet(
