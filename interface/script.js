@@ -2,7 +2,14 @@ const socket = io()
 import { ethers } from "./node_modules/ethers/dist/ethers.esm.min.js"
 
 // TODO: add option to choose multiplier for formatting amounts (e.g. gwei)
+// TODO: option to automatically submit "forced move" transactions
+// TODO: add buttons for timeouts
+// TODO: debug issue with verify shuffle sometimes getting stuck with increasing wrong number of args
 // TODO: input validation for send funds form
+// TODO: make Send button say Transfer instead?
+// TODO: style buttons more distinctly? make it obvious when some button needs pressing
+// TODO: bug: last hole card was duplicated once in the UI
+// TODO: bug? after showdown log does not update properly when second player reveals
 // TODO: buttons should be disabled based on whether a transaction is actually pending
 // TODO: show next small blind value (in config)
 // TODO: show/hide account balance even if wallet is hidden
