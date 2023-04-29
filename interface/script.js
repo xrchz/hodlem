@@ -702,7 +702,7 @@ socket.on('activeGames', (configs, data) => {
               slider.dispatchEvent(e2)
             }
             if (!e.fromAmountEther) {
-              amountEther.value = ethers.utils.formatUnits(amountWei.value, 'ether')
+              amountEther.value = ethers.utils.formatEther(amountWei.value)
               amountEther.dispatchEvent(e2)
             }
           }
