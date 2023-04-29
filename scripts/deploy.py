@@ -1,3 +1,4 @@
+import IPython
 from ape import networks, accounts, project
 
 acc = accounts.test_accounts
@@ -15,4 +16,4 @@ def main():
         f.write(f'RPC={networks.active_provider.web3.provider.endpoint_uri}\n')
         f.write(f'GAME={game.address}\n')
     acc[0].transfer('0xCcbd1e8d367F6AC608b97260D8De9bad27C11ADc', '6.9 ether')
-    assert False, "avoid exiting: drop into interactive console"
+    IPython.embed()
